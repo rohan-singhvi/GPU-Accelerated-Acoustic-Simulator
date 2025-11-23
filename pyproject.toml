@@ -1,0 +1,18 @@
+[project]
+name = "gpu-accelerated-acoustic-simulator"
+version = "0.1.0"
+description = "Acoustic simulation with Numba and CUDA"
+readme = "README.md"
+# FIXED: Changed from 3.14 to match your Docker image (3.10)
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "numba",
+    "scipy",
+    "soundfile",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "cupy-cuda12x",
+]
