@@ -9,6 +9,7 @@ dependencies = [
     "numba",
     "scipy",
     "soundfile",
+    "trimesh",
 ]
 
 [project.optional-dependencies]
