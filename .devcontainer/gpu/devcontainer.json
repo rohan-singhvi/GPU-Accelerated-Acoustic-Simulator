@@ -1,0 +1,36 @@
+{
+    "name": "devcontainer-gpu",
+    "build": {
+        "dockerfile": "../../dockerfile",
+        "context": "../..",
+        "args": {
+            "INSTALL_GPU": "true"
+        }
+    },
+
+    "containerEnv": {
+        "NUMBA_ENABLE_CUDASIM": "0",
+        "PYTHONUNBUFFERED": "1"
+    },
+
+    "features": {
+        "ghcr.io/devcontainers/features/nvidia-cuda:2.0.0": {
+            "installToolkit": true
+        }
+    },
+
+    "hostRequirements": {
+        "gpu": "optional"
+    },
+
+    "customizations": {
+        // Configure properties specific to VS Code.
+        "vscode": {
+            // Add the IDs of extensions you want installed when the container is created.
+            "extensions": [
+                "ms-python.python",
+                "mhutchie.git-graph"
+            ]
+        }
+    }
+}
