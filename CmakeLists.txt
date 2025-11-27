@@ -1,11 +1,10 @@
-cmake_minimum_required(VERSION 3.18) # 3.18+ required for CheckLanguage optimization
+cmake_minimum_required(VERSION 3.18)
 project(AcousticSimulator LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 
-# Deps
-find_package(OpenMP)
+find_package(OpenMP) 
 if(OpenMP_CXX_FOUND)
     link_libraries(OpenMP::OpenMP_CXX)
 endif()
@@ -15,13 +14,9 @@ if(PKG_CONFIG_FOUND)
     pkg_check_modules(FFTW3 fftw3f) 
 endif()
 
-# CUDA Detection
 include(CheckLanguage)
 check_language(CUDA)
 
-# HELPER: Check if GPU hardware is actually accessible.
-# On Mac/Windows Docker, nvcc might exist (in the image), but the GPU is not mounted.
-# We run 'nvidia-smi -L' to see if we can talk to a driver.
 set(GPU_HARDWARE_AVAILABLE OFF)
 find_program(NVIDIA_SMI "nvidia-smi")
 if(NVIDIA_SMI)
@@ -56,27 +51,26 @@ else()
     endif()
 endif()
 
-#  Sources 
+# --- Sources ---
+# Update paths to reflect new structure
 set(SOURCES 
     src/main.cpp 
-    src/simulation_cpu.cpp 
-    src/convolution_cpu.cpp
+    src/cpu/simulation_cpu.cpp 
+    src/cpu/convolution_cpu.cpp
 )
 
 if(ENABLE_CUDA)
     list(APPEND SOURCES 
-        src/simulation_gpu.cu 
-        src/convolution_gpu.cu
+        src/gpu/simulation_gpu.cu 
+        src/gpu/convolution_gpu.cu
     )
 endif()
 
 add_executable(acoustic_sim ${SOURCES})
 
-# Explicitly set ENABLE_CUDA for the target
+# --- Compile Definitions ---
 if(ENABLE_CUDA)
     target_compile_definitions(acoustic_sim PRIVATE ENABLE_CUDA=1)
-    
-    # Link CUDA libraries
     target_link_libraries(acoustic_sim PRIVATE CUDA::cufft CUDA::cudart)
 
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -84,7 +78,7 @@ if(ENABLE_CUDA)
     endif()
 endif()
 
-target_include_directories(acoustic_sim PRIVATE src)
+target_include_directories(acoustic_sim PRIVATE include src/gpu)
 
 if(FFTW3_FOUND)
     target_include_directories(acoustic_sim PRIVATE ${FFTW3_INCLUDE_DIRS})
