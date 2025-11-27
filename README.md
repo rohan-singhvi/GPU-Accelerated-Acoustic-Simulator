@@ -1,5 +1,3 @@
-Understood. Here is the raw Markdown text for the `README.md`. You can copy the block below directly.
-
 # GPU-Accelerated Acoustic Simulator (C++/CUDA)
 
 A high-performance, hybrid acoustic ray tracer written in **C++17** and **CUDA**.
