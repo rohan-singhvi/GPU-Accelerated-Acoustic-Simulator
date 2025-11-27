@@ -1,0 +1,26 @@
+{
+    "name": "devcontainer-cpu",
+    "build": {
+        "dockerfile": "../../dockerfile",
+        "context": "../..",
+        "args": {
+            "INSTALL_GPU": "false"
+        }
+    },
+
+    "containerEnv": {
+        "NUMBA_ENABLE_CUDASIM": "1",
+        "PYTHONUNBUFFERED": "1"
+    },
+
+    "customizations": {
+        // Configure properties specific to VS Code.
+        "vscode": {
+            // Add the IDs of extensions you want installed when the container is created.
+            "extensions": [
+                "ms-python.python",
+                "mhutchie.git-graph"
+            ]
+        }
+    }
+}
