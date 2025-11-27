@@ -1,27 +1,29 @@
 services:
-  cuda-dev:
-    build:
-      context: .
-      args:
-        INSTALL_GPU: "false"
-
-    container_name: acoustic-sim-dev
-    
+  # 1. Development Container (Mounts code, keeps running)
+  dev:
+    build: .
     volumes:
-      # mount the code (syncs changes live)
       - .:/app
-      # preserve the .venv folder (The Volume Trick)
-      # this tells Docker: "Don't overwrite /app/.venv with the host folder.
-      # keep the version we built inside the container."
-      - /app/.venv
-      
-      # ssh keys (kept from your original)
-      - ~/.ssh:/root/.ssh:ro
-      
-    environment:
-      - NUMBA_ENABLE_CUDASIM=1
-      # ensure python doesn't buffer output (better for logs)
-      - PYTHONUNBUFFERED=1
-      
-    tty: true
-    stdin_open: true
+    command: tail -f /dev/null
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Fallback if no GPU is found (Docker will ignore the reservation if configured correctly or warn)
+    # To strictly allow CPU fallback without error, you might need two service definitions or 
+    # rely on the user not using --gpus all if they lack one.
+
+  # 2. Deployment (Just runs the app)
+  app:
+    build: .
+    image: acoustic-sim:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
