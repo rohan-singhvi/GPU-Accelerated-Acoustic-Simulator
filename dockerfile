@@ -1,29 +1,30 @@
-FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim
+# 1. Base Stage: Install Dependencies
+FROM nvidia/cuda:12.3.1-devel-ubuntu22.04 AS base
 
 WORKDIR /app
 
-# sys deps
-RUN apt-get update && \
-    apt-get install -y git && \
-    rm -rf /var/lib/apt/lists/*
+# Install System Dependencies
+# fftw3-dev: CPU convolution fallback
+# cmake/git: Build tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    libfftw3-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
-# environment
-# compile bytecode for faster startup
-ENV UV_COMPILE_BYTECODE=1
-ENV PATH="/app/.venv/bin:$PATH"
+# 2. Dev Stage: For VS Code / DevContainer
+# We stop here for development. Source code is NOT copied; it will be mounted live.
+FROM base AS dev
+# (Optional) Add any dev-specific tools here like gdb, clang-format, etc.
 
-# python deps
-# copy only the project files first (better caching)
-COPY pyproject.toml uv.lock* /app/
-ARG INSTALL_GPU=false
-RUN if [ "$INSTALL_GPU" = "true" ]; then \
-        echo "Installing GPU Dependencies (Base + CuPy)..." && \
-        uv sync --extra gpu; \
-    else \
-        echo "Installing CPU Simulation Dependencies only..." && \
-        uv sync; \
-    fi
-
+# 3. Deploy Stage: For Production / Standalone
+# This stage copies the source and builds the binary into the image.
+FROM base AS deploy
 COPY . /app
+RUN mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
 
-CMD ["bash"]
+CMD ["./build/acoustic_sim"]
