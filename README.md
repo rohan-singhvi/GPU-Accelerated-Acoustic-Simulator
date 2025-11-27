@@ -127,6 +127,3 @@ python3 ../generate_beat.py
 | `--input` | Path to input `.wav` for reverb processing | - |
 | `--mix` | Wet/Dry mix (`0.0` to `1.0`) | `0.4` |
 | `--out` | Output `.wav` filename | `out.wav` |
-
-```
-```
