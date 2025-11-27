@@ -27,7 +27,7 @@ float3 parse_dims(const char* arg) {
     return make_float3(x, y, z);
 }
 
-// --- DISPATCHERS ---
+
 void run_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& ir) {
 #ifdef ENABLE_CUDA
     std::cout << "Backend: CUDA GPU" << std::endl;
@@ -46,7 +46,7 @@ std::vector<float> apply_reverb(const std::vector<float>& dry, const std::vector
 #endif
 }
 
-// --- MAIN ---
+
 int main(int argc, char** argv) {
     SimulationParams params;
     params.num_rays = 100000;

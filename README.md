@@ -1,5 +1,3 @@
-Understood. Here is the raw Markdown text for the `README.md`. You can copy the block below directly.
-
 # GPU-Accelerated Acoustic Simulator (C++/CUDA)
 
 A high-performance, hybrid acoustic ray tracer written in **C++17** and **CUDA**.
@@ -9,15 +7,10 @@ This engine simulates sound propagation in 3D spaces to generate realistic **Roo
 * **NVIDIA GPU:** Runs massively parallel ray tracing using CUDA.
 * **CPU (Mac/Linux):** Falls back to multi-threaded OpenMP + FFTW for compatibility.
 
-It supports complex physics including **Stochastic Transmission** (sound passing through walls) and **Material Absorption**.
-
 ## Features
 
 * **Hybrid Core:** Seamlessly runs on MacBook Pro (CPU) or Cloud Servers (H100/A100 GPUs).
 * **Room Shapes:** Shoebox, Dome (Hemisphere), and Arbitrary 3D Meshes (.obj).
-* **Advanced Physics:**
-    * **Absorption:** Control how reflective walls are (Concrete vs. Foam).
-    * **Transmission:** Simulate porous materials, holes, or sound leakage between rooms.
 * **Audio Processing:** Built-in Convolution engine to apply reverb to wav files instantly.
 
 ## Prerequisites
