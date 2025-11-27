@@ -4,23 +4,27 @@ FROM nvidia/cuda:12.3.1-devel-ubuntu22.04 AS base
 WORKDIR /app
 
 # Install System Dependencies
-# fftw3-dev: CPU convolution fallback
-# cmake/git: Build tools
+# - C++: build-essential, cmake, git, libfftw3-dev
+# - Python: python3, python3-pip (for helper scripts)
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
     libfftw3-dev \
     pkg-config \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python Helper Dependencies
+# We use standard pip here since it's just for helper scripts, not the main engine
+RUN pip3 install --no-cache-dir numpy scipy soundfile trimesh
+
 # 2. Dev Stage: For VS Code / DevContainer
-# We stop here for development. Source code is NOT copied; it will be mounted live.
 FROM base AS dev
-# (Optional) Add any dev-specific tools here like gdb, clang-format, etc.
+# Source code is NOT copied here; it will be mounted live by DevContainer.
 
 # 3. Deploy Stage: For Production / Standalone
-# This stage copies the source and builds the binary into the image.
 FROM base AS deploy
 COPY . /app
 RUN mkdir -p build && cd build && \

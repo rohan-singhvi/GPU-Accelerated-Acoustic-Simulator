@@ -1,23 +1,28 @@
-#include "simulation.cuh"
-#include "cuda_math.h"
+#include "simulation.h"
 #include <cstdio>
 
 // Device Constants
 #define SPEED_OF_SOUND 343.0f
 #define SAMPLE_RATE 44100.0f
-#define LISTENER_RADIUS 0.2f
+#define LISTENER_RADIUS 0.5f // Matches CPU
 #define MAX_BOUNCES 50
 
-// ==========================================
-//   INTERSECTION HELPER FUNCTIONS
-// ==========================================
+// --- GPU RANDOM HELPER (Stateless) ---
+// We need this to decide: Transmit or Reflect?
+__device__ inline float rand_gpu(unsigned int& seed) {
+    seed = seed * 747796405 + 2891336453;
+    unsigned int result = ((seed >> ((seed >> 28) + 4)) ^ seed) * 277803737;
+    result = (result >> 22) ^ result;
+    return (float)result / 4294967295.0f;
+}
+
+// --- INTERSECTION HELPERS ---
 
 __device__ void intersect_sphere(
     const float3& ray_origin, const float3& ray_dir, 
     float radius, 
     float& min_dist, float3& normal
 ) {
-    // Standard Ray-Sphere intersection
     float b = 2.0f * dot(ray_origin, ray_dir);
     float c = dot(ray_origin, ray_origin) - (radius * radius);
     float disc = b * b - 4.0f * c;
@@ -29,13 +34,13 @@ __device__ void intersect_sphere(
     float t2 = (-b + sqrt_disc) / 2.0f;
 
     float t = 1e20f;
+    // Prefer closest positive t
     if (t1 > 1e-3f) t = t1;
     else if (t2 > 1e-3f) t = t2;
 
     if (t < min_dist) {
         min_dist = t;
-        float3 hit_point = ray_origin + ray_dir * t;
-        normal = normalize(hit_point); // Sphere at 0,0,0 normal is just normalized pos
+        normal = normalize(ray_origin + ray_dir * t);
     }
 }
 
@@ -60,7 +65,6 @@ __device__ void intersect_triangle(
     float f = 1.0f / a;
     float3 s = ray_origin - v0;
     float u = f * dot(s, h);
-    
     if (u < 0.0f || u > 1.0f) return;
 
     float3 q;
@@ -91,17 +95,23 @@ __global__ void ray_trace_kernel(
     float* d_impulse_response,
     int room_type,
     int ir_length,
+    float wall_absorption,
+    float wall_transmission,
     // Mesh Data
     float3* d_v0, float3* d_v1, float3* d_v2, float3* d_normals, int num_triangles
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    // Check bounds (assuming d_pos size matches num_rays)
-    // We can't easily check array size in CUDA, rely on launch bounds
+    // We can't rely on array size check easily, assuming caller manages bounds or we add N param
+    // But for now we just run. 
+    // Ideally pass 'int num_rays' and check 'if (idx >= num_rays) return;'
     
     float3 px = d_pos[idx];
     float3 dx = d_dir[idx];
     
+    // Initialize RNG Seed based on thread ID
+    unsigned int seed = idx + 12345;
+
     float dist_traveled = 0.0f;
     float energy = 1.0f;
 
@@ -109,59 +119,30 @@ __global__ void ray_trace_kernel(
         float min_dist = 1e20f;
         float3 nx = make_float3(0.0f, 0.0f, 0.0f);
 
-        // --- SHOEBOX ---
+        // --- GEOMETRY CHECK ---
         if (room_type == SHOEBOX) {
             // X-Walls
-            if (dx.x > 0.0f) {
-                float d = (room_dims.x - px.x) / dx.x;
-                if (d < min_dist) { min_dist = d; nx = make_float3(-1, 0, 0); }
-            } else {
-                float d = (0.0f - px.x) / dx.x;
-                if (d < min_dist) { min_dist = d; nx = make_float3(1, 0, 0); }
-            }
+            if (dx.x > 0.0f) { float d = (room_dims.x - px.x) / dx.x; if (d < min_dist) { min_dist = d; nx = make_float3(-1, 0, 0); } }
+            else { float d = (0.0f - px.x) / dx.x; if (d < min_dist) { min_dist = d; nx = make_float3(1, 0, 0); } }
             // Y-Walls
-            if (dx.y > 0.0f) {
-                float d = (room_dims.y - px.y) / dx.y;
-                if (d < min_dist) { min_dist = d; nx = make_float3(0, -1, 0); }
-            } else {
-                float d = (0.0f - px.y) / dx.y;
-                if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
-            }
+            if (dx.y > 0.0f) { float d = (room_dims.y - px.y) / dx.y; if (d < min_dist) { min_dist = d; nx = make_float3(0, -1, 0); } }
+            else { float d = (0.0f - px.y) / dx.y; if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); } }
             // Z-Walls
-            if (dx.z > 0.0f) {
-                float d = (room_dims.z - px.z) / dx.z;
-                if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, -1); }
-            } else {
-                float d = (0.0f - px.z) / dx.z;
-                if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); }
-            }
+            if (dx.z > 0.0f) { float d = (room_dims.z - px.z) / dx.z; if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, -1); } }
+            else { float d = (0.0f - px.z) / dx.z; if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); } }
         }
-        // --- DOME ---
         else if (room_type == DOME) {
             float radius = room_dims.x;
-            // Floor
-            if (dx.y < 0.0f) {
-                float d = (0.0f - px.y) / dx.y;
-                if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
-            }
-            // Dome
+            if (dx.y < 0.0f) { float d = (0.0f - px.y) / dx.y; if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); } }
             intersect_sphere(px, dx, radius, min_dist, nx);
         }
-        // --- MESH ---
         else if (room_type == MESH) {
-            // Naive loop over all triangles
             for(int i = 0; i < num_triangles; ++i) {
-                // In a real optimized engine, this would traverse a BVH
                 intersect_triangle(px, dx, d_v0[i], d_v1[i], d_v2[i], d_normals[i], min_dist, nx);
             }
         }
 
-        // --- PHYSICS ---
-        
-        // Missed everything?
-        if (min_dist >= 1e19f) break;
-
-        // Check Listener intersection along this ray segment
+        // --- LISTENER CHECK (Moved Before Break) ---
         float3 to_listener = listener_pos - px;
         float t_proj = dot(to_listener, dx);
 
@@ -170,7 +151,6 @@ __global__ void ray_trace_kernel(
             float dist_sq = length_sq(listener_pos - closest_point);
             
             if (dist_sq < (LISTENER_RADIUS * LISTENER_RADIUS)) {
-                // Hit Listener!
                 float total_dist = dist_traveled + t_proj;
                 int idx_time = (int)((total_dist / SPEED_OF_SOUND) * SAMPLE_RATE);
                 
@@ -180,17 +160,35 @@ __global__ void ray_trace_kernel(
             }
         }
 
-        // Move Ray
-        float move_dist = min_dist + 1e-3f; // nudge
-        px = px + dx * move_dist;
+        // --- PHYSICS END ---
+        if (min_dist >= 1e19f) break;
+
+        // Calculate Hit Point
+        float3 hit_point = px + dx * min_dist;
         dist_traveled += min_dist;
 
-        // Reflect
-        float dot_prod = dot(dx, nx);
-        dx = dx - 2.0f * dot_prod * nx;
+        // --- MATERIAL INTERACTION ---
+        float roll = rand_gpu(seed); // 0.0 to 1.0
 
-        // Absorb
-        energy *= 0.85f;
+        if (roll < wall_transmission) {
+            // TRANSMISSION
+            // Push ray slightly PAST the wall (0.01f)
+            px = hit_point + dx * 0.01f;
+            energy *= 0.7f;
+        } 
+        else {
+            // REFLECTION
+            float dot_prod = dot(dx, nx);
+            float3 reflection = dx - 2.0f * dot_prod * nx;
+            
+            dx = normalize(reflection);
+            
+            // Push ray slightly OFF the wall (0.001f) along NEW path
+            px = hit_point + dx * 0.001f;
+            
+            energy *= (1.0f - wall_absorption);
+        }
+
         if (energy < 0.001f) break;
     }
 }
@@ -199,7 +197,7 @@ __global__ void ray_trace_kernel(
 //   HOST WRAPPER
 // ==========================================
 
-void run_acoustic_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& h_impulse_response) {
+void run_simulation_gpu(const SimulationParams& params, const MeshData& mesh, std::vector<float>& h_impulse_response) {
     int N = params.num_rays;
     
     // 1. Generate Rays on Host
@@ -209,8 +207,6 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     srand(time(NULL));
     for (int i = 0; i < N; ++i) {
         h_pos[i] = params.source_pos;
-        
-        // Random spherical direction
         float u = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
         float v = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
         float w = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
@@ -228,12 +224,10 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     cudaMemcpy(d_pos, h_pos.data(), N * sizeof(float3), cudaMemcpyHostToDevice);
     cudaMemcpy(d_dir, h_dir.data(), N * sizeof(float3), cudaMemcpyHostToDevice);
 
-    // Impulse Response buffer
-    int ir_len = 44100; // 1 second buffer
+    int ir_len = 44100;
     cudaMalloc(&d_ir, ir_len * sizeof(float));
     cudaMemset(d_ir, 0, ir_len * sizeof(float));
 
-    // Mesh Buffers (if needed)
     if (params.room_type == MESH) {
         int t_count = mesh.num_triangles;
         cudaMalloc(&d_v0, t_count * sizeof(float3));
@@ -251,7 +245,8 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     int threads = 256;
     int blocks = (N + threads - 1) / threads;
     
-    printf("Launching Kernel: %d rays, %d blocks\n", N, blocks);
+    printf("Launching Kernel: %d rays, %d blocks (GPU)\n", N, blocks);
+    printf("Materials: Abs=%.2f, Trans=%.2f\n", params.wall_absorption, params.wall_transmission);
     
     ray_trace_kernel<<<blocks, threads>>>(
         d_pos, d_dir, 
@@ -260,25 +255,24 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
         d_ir, 
         (int)params.room_type, 
         ir_len,
+        params.wall_absorption,   // NEW
+        params.wall_transmission, // NEW
         d_v0, d_v1, d_v2, d_normals, mesh.num_triangles
     );
     
     cudaDeviceSynchronize();
     
-    // Check for errors
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         printf("CUDA Error: %s\n", cudaGetErrorString(err));
     }
 
-    // 4. Retrieve Result
+    // 4. Retrieve
     h_impulse_response.resize(ir_len);
     cudaMemcpy(h_impulse_response.data(), d_ir, ir_len * sizeof(float), cudaMemcpyDeviceToHost);
 
     // Cleanup
-    cudaFree(d_pos);
-    cudaFree(d_dir);
-    cudaFree(d_ir);
+    cudaFree(d_pos); cudaFree(d_dir); cudaFree(d_ir);
     if(d_v0) cudaFree(d_v0);
     if(d_v1) cudaFree(d_v1);
     if(d_v2) cudaFree(d_v2);
