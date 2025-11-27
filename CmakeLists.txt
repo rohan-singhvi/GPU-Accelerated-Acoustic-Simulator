@@ -4,7 +4,7 @@ project(AcousticSimulator LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 
-# --- Dependencies ---
+# Deps
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
     link_libraries(OpenMP::OpenMP_CXX)
@@ -15,7 +15,7 @@ if(PKG_CONFIG_FOUND)
     pkg_check_modules(FFTW3 fftw3f) 
 endif()
 
-# --- CUDA Detection ---
+# CUDA Detection
 include(CheckLanguage)
 check_language(CUDA)
 
@@ -37,7 +37,6 @@ if(CMAKE_CUDA_COMPILER AND GPU_HARDWARE_AVAILABLE)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
     
-    # Set Architecture (Fixes the CMP0104 warning)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         set(CMAKE_CUDA_ARCHITECTURES "native")
     endif()
@@ -57,7 +56,7 @@ else()
     endif()
 endif()
 
-# --- Sources ---
+#  Sources 
 set(SOURCES 
     src/main.cpp 
     src/simulation_cpu.cpp 
@@ -73,7 +72,6 @@ endif()
 
 add_executable(acoustic_sim ${SOURCES})
 
-# --- Compile Definitions ---
 # Explicitly set ENABLE_CUDA for the target
 if(ENABLE_CUDA)
     target_compile_definitions(acoustic_sim PRIVATE ENABLE_CUDA=1)
@@ -81,13 +79,11 @@ if(ENABLE_CUDA)
     # Link CUDA libraries
     target_link_libraries(acoustic_sim PRIVATE CUDA::cufft CUDA::cudart)
 
-    # CUDA Optimizations
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         target_compile_options(acoustic_sim PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-O3 --use_fast_math>)
     endif()
 endif()
 
-# --- Include Directories ---
 target_include_directories(acoustic_sim PRIVATE src)
 
 if(FFTW3_FOUND)

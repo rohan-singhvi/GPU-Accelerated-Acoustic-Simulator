@@ -7,9 +7,6 @@
 #include <sstream>
 #include <iostream>
 
-// CRITICAL FIX: Do NOT include <cuda_runtime.h> directly.
-// Include our wrapper "cuda_math.h" instead. 
-// This ensures we get 'float3' even if CUDA is disabled.
 #include "cuda_math.h"
 
 struct MeshData {
@@ -20,11 +17,10 @@ struct MeshData {
     int num_triangles = 0;
 };
 
-// A simple, dependency-free OBJ loader
+// dependency-free OBJ loader
 inline MeshData load_obj(const std::string& filename) {
     MeshData mesh;
     std::vector<float3> temp_vertices;
-    // temp_normals usage removed or simplified for this specific loader approach
 
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -44,7 +40,7 @@ inline MeshData load_obj(const std::string& filename) {
             temp_vertices.push_back(make_float3(x, y, z));
         } 
         else if (prefix == "f") {
-            // Very basic face parsing "f v1 v2 v3" or "f v1//n1 v2//n2 v3//n3"
+            // extremely basic face parsing "f v1 v2 v3" or "f v1//n1 v2//n2 v3//n3"
             std::string segment;
             int v_indices[3];
             int i = 0;
@@ -56,7 +52,7 @@ inline MeshData load_obj(const std::string& filename) {
             }
 
             if (i == 3) {
-                // Bounds check
+                // check bounds
                 if(v_indices[0] < temp_vertices.size() && 
                    v_indices[1] < temp_vertices.size() && 
                    v_indices[2] < temp_vertices.size()) 
@@ -70,7 +66,7 @@ inline MeshData load_obj(const std::string& filename) {
                     mesh.v2.push_back(p2);
                     mesh.num_triangles++;
 
-                    // Calculate Face Normal
+                    // calculate face normal
                     float3 e1 = p1 - p0;
                     float3 e2 = p2 - p0;
                     

@@ -2,22 +2,17 @@
 #include "cuda_math.h"
 #include <cstdio>
 
-// Device Constants
 #define SPEED_OF_SOUND 343.0f
 #define SAMPLE_RATE 44100.0f
 #define LISTENER_RADIUS 0.2f
 #define MAX_BOUNCES 50
-
-// ==========================================
-//   INTERSECTION HELPER FUNCTIONS
-// ==========================================
 
 __device__ void intersect_sphere(
     const float3& ray_origin, const float3& ray_dir, 
     float radius, 
     float& min_dist, float3& normal
 ) {
-    // Standard Ray-Sphere intersection
+    // Ray-Sphere intersection
     float b = 2.0f * dot(ray_origin, ray_dir);
     float c = dot(ray_origin, ray_origin) - (radius * radius);
     float disc = b * b - 4.0f * c;
@@ -79,10 +74,6 @@ __device__ void intersect_triangle(
     }
 }
 
-// ==========================================
-//   MAIN KERNEL
-// ==========================================
-
 __global__ void ray_trace_kernel(
     float3* d_pos,
     float3* d_dir,
@@ -91,13 +82,13 @@ __global__ void ray_trace_kernel(
     float* d_impulse_response,
     int room_type,
     int ir_length,
-    // Mesh Data
+    // mesh data
     float3* d_v0, float3* d_v1, float3* d_v2, float3* d_normals, int num_triangles
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    // Check bounds (assuming d_pos size matches num_rays)
-    // We can't easily check array size in CUDA, rely on launch bounds
+    // bound check (assuming d_pos size matches num_rays)
+    // can't easily check array size in CUDA, rely on launch bounds
     
     float3 px = d_pos[idx];
     float3 dx = d_dir[idx];
@@ -109,7 +100,7 @@ __global__ void ray_trace_kernel(
         float min_dist = 1e20f;
         float3 nx = make_float3(0.0f, 0.0f, 0.0f);
 
-        // --- SHOEBOX ---
+        //  shoebox
         if (room_type == SHOEBOX) {
             // X-Walls
             if (dx.x > 0.0f) {
@@ -136,7 +127,7 @@ __global__ void ray_trace_kernel(
                 if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); }
             }
         }
-        // --- DOME ---
+        //  dome 
         else if (room_type == DOME) {
             float radius = room_dims.x;
             // Floor
@@ -147,7 +138,7 @@ __global__ void ray_trace_kernel(
             // Dome
             intersect_sphere(px, dx, radius, min_dist, nx);
         }
-        // --- MESH ---
+        //  mesh 
         else if (room_type == MESH) {
             // Naive loop over all triangles
             for(int i = 0; i < num_triangles; ++i) {
@@ -155,13 +146,11 @@ __global__ void ray_trace_kernel(
                 intersect_triangle(px, dx, d_v0[i], d_v1[i], d_v2[i], d_normals[i], min_dist, nx);
             }
         }
-
-        // --- PHYSICS ---
         
         // Missed everything?
         if (min_dist >= 1e19f) break;
 
-        // Check Listener intersection along this ray segment
+        // listener intersection along this ray segment
         float3 to_listener = listener_pos - px;
         float t_proj = dot(to_listener, dx);
 
@@ -170,7 +159,7 @@ __global__ void ray_trace_kernel(
             float dist_sq = length_sq(listener_pos - closest_point);
             
             if (dist_sq < (LISTENER_RADIUS * LISTENER_RADIUS)) {
-                // Hit Listener!
+                // hit!
                 float total_dist = dist_traveled + t_proj;
                 int idx_time = (int)((total_dist / SPEED_OF_SOUND) * SAMPLE_RATE);
                 
@@ -180,29 +169,26 @@ __global__ void ray_trace_kernel(
             }
         }
 
-        // Move Ray
+        // move ray
         float move_dist = min_dist + 1e-3f; // nudge
         px = px + dx * move_dist;
         dist_traveled += min_dist;
 
-        // Reflect
+        // reflect
         float dot_prod = dot(dx, nx);
         dx = dx - 2.0f * dot_prod * nx;
 
-        // Absorb
+        // absorb
         energy *= 0.85f;
         if (energy < 0.001f) break;
     }
 }
 
-// ==========================================
-//   HOST WRAPPER
-// ==========================================
-
+// wrapper
 void run_acoustic_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& h_impulse_response) {
     int N = params.num_rays;
     
-    // 1. Generate Rays on Host
+    // generate rays
     std::vector<float3> h_pos(N);
     std::vector<float3> h_dir(N);
     
@@ -210,7 +196,7 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     for (int i = 0; i < N; ++i) {
         h_pos[i] = params.source_pos;
         
-        // Random spherical direction
+        // random spherical direction
         float u = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
         float v = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
         float w = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
@@ -218,7 +204,7 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
         h_dir[i] = normalize(d);
     }
 
-    // 2. Allocate Device Memory
+    // allocate device memory
     float3 *d_pos, *d_dir, *d_v0 = nullptr, *d_v1 = nullptr, *d_v2 = nullptr, *d_normals = nullptr;
     float *d_ir;
     
@@ -228,12 +214,12 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     cudaMemcpy(d_pos, h_pos.data(), N * sizeof(float3), cudaMemcpyHostToDevice);
     cudaMemcpy(d_dir, h_dir.data(), N * sizeof(float3), cudaMemcpyHostToDevice);
 
-    // Impulse Response buffer
+    // IR buffer
     int ir_len = 44100; // 1 second buffer
     cudaMalloc(&d_ir, ir_len * sizeof(float));
     cudaMemset(d_ir, 0, ir_len * sizeof(float));
 
-    // Mesh Buffers (if needed)
+    // mesh buffer (if needed)
     if (params.room_type == MESH) {
         int t_count = mesh.num_triangles;
         cudaMalloc(&d_v0, t_count * sizeof(float3));
@@ -246,8 +232,6 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
         cudaMemcpy(d_v2, mesh.v2.data(), t_count * sizeof(float3), cudaMemcpyHostToDevice);
         cudaMemcpy(d_normals, mesh.normals.data(), t_count * sizeof(float3), cudaMemcpyHostToDevice);
     }
-
-    // 3. Launch
     int threads = 256;
     int blocks = (N + threads - 1) / threads;
     
@@ -265,13 +249,12 @@ void run_acoustic_simulation(const SimulationParams& params, const MeshData& mes
     
     cudaDeviceSynchronize();
     
-    // Check for errors
+    // errors
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         printf("CUDA Error: %s\n", cudaGetErrorString(err));
     }
-
-    // 4. Retrieve Result
+    
     h_impulse_response.resize(ir_len);
     cudaMemcpy(h_impulse_response.data(), d_ir, ir_len * sizeof(float), cudaMemcpyDeviceToHost);
 

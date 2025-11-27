@@ -1,11 +1,11 @@
 #include "simulation.h"
 #include <cmath>
-#include <omp.h>
+#include <omp.h> // for multithreading
 #include <iostream>
 #include <algorithm>
 #include <atomic> // Added for hit counting
 
-// --- HELPER: Ray-Triangle Intersection (Möller–Trumbore) ---
+// Ray-Triangle Intersection (Möller–Trumbore) 
 // Returns distance t, or 1e20 if miss. Updates normal if hit.
 inline float intersect_triangle_cpu(
     const float3& ray_origin, const float3& ray_dir,
@@ -17,14 +17,14 @@ inline float intersect_triangle_cpu(
     float3 e1 = v1 - v0;
     float3 e2 = v2 - v0;
 
-    // Cross product: h = ray_dir X e2
+    // h = ray_dir X e2
     float3 h;
     h.x = ray_dir.y * e2.z - ray_dir.z * e2.y;
     h.y = ray_dir.z * e2.x - ray_dir.x * e2.z;
     h.z = ray_dir.x * e2.y - ray_dir.y * e2.x;
 
     float a = dot(e1, h);
-    // Note: We intentionally allow negative 'a' (backfaces) to ensure we hit 
+    // intentionally allow negative 'a' (backfaces) to ensure we hit 
     // the mesh even if we are inside it or normals are inverted.
     if (a > -epsilon && a < epsilon) return 1e20f; // Parallel
 
@@ -59,7 +59,7 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
 
     const float SPEED_OF_SOUND = 343.0f;
     const float SAMPLE_RATE = 44100.0f;
-    // INCREASED RADIUS: 0.2 -> 0.5 to ensure hits with lower ray counts
+    // 0.5 to ensure hits with lower ray counts
     const float LISTENER_RADIUS = 0.5f; 
 
     std::cout << "Running CPU Simulation (OpenMP Threads: " << omp_get_max_threads() << ")..." << std::endl;
@@ -85,7 +85,7 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
             return (float)((seed / 65536) % 32768) / 32768.0f; 
         };
 
-        // Generate Random Direction
+        // random direction vector
         float u = rand_float() * 2.0f - 1.0f;
         float v = rand_float() * 2.0f - 1.0f;
         float w = rand_float() * 2.0f - 1.0f;
@@ -98,9 +98,9 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
         for (int bounce = 0; bounce < 50; ++bounce) {
              float min_dist = 1e20f;
              float3 nx = make_float3(0,0,0);
-             int hit_tri_idx = -1; // Debugging
+             int hit_tri_idx = -1; // debug
 
-             // --- SHOEBOX ---
+             //  shoebox (put this in a function)
              if (params.room_type == SHOEBOX) {
                 if (dx.x > 0.0f) {
                     float d = (params.room_dims.x - px.x) / dx.x;
@@ -124,7 +124,7 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                     if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); }
                 }
              }
-             // --- DOME ---
+             //  dome (put this in a function)
              else if (params.room_type == DOME) {
                 float radius = params.room_dims.x;
                 // Floor
@@ -132,7 +132,7 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                     float d = (0.0f - px.y) / dx.y;
                     if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
                 }
-                // Sphere Intersect
+                // Sphere Intersect 
                 float b = 2.0f * dot(px, dx);
                 float c = dot(px, px) - radius * radius;
                 float disc = b*b - 4.0f*c;
@@ -147,7 +147,7 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                     }
                 }
              }
-             // --- MESH ---
+             //  mesh (put this in a function) 
              else if (params.room_type == MESH) {
                  float3 temp_n;
                  for(int t=0; t<mesh.num_triangles; ++t) {
@@ -166,11 +166,11 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                  }
              }
 
-             // --- CHECK LISTENER HIT (Before Break!) ---
+             //  listener hit?
              float3 to_l = params.listener_pos - px;
              float t_proj = dot(to_l, dx);
              
-             // Check if listener is IN FRONT of us and CLOSER than the wall
+             // if listener is in front of us and closer than the wall
              if (t_proj > 0 && t_proj < min_dist) {
                  float3 closest = px + dx * t_proj;
                  float dist_sq = length_sq(params.listener_pos - closest);
@@ -183,32 +183,30 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                      }
                  }
              }
-
-             // --- PHYSICS END ---
              if (min_dist >= 1e19f) {
                  if (i == 0 && bounce == 0) printf("[Ray 0] Missed Mesh completely.\n");
                  break;
              }
 
-             // Debug First Ray
+             // debug ray 0
              if (i == 0 && bounce < 3) {
                  printf("[Ray 0] Bounce %d: Hit Wall at %.2f (Tri: %d)\n", bounce, min_dist, hit_tri_idx);
              }
 
-             // --- MOVE ALONG REFLECTION ---
+             // move along reflection
              float3 hit_point = px + dx * min_dist;
              dist_traveled += min_dist;
 
              float d_dot_n = dot(dx, nx);
              float3 reflection = dx - 2.0f * d_dot_n * nx;
              
-             // Update Direction (Normalize to prevent float error accumulation)
+             // update dir (normalize to prevent float error accumulation)
              dx = normalize(reflection);
 
-             // Move Origin (Nudge)
+             // nudge
              px = hit_point + dx * 0.001f;
 
-             // Absorb
+             // absorb 15%
              energy *= 0.85f;
              if (energy < 0.001f) break;
         }
@@ -219,7 +217,6 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
         std::cout << "WARNING: No rays hit the listener! Try increasing --rays or the listener size is too small." << std::endl;
     }
 
-    // Accumulate results
     for(int t=0; t<num_threads; ++t) {
         for(int i=0; i<ir_len; ++i) {
             ir[i] += thread_irs[t][i];

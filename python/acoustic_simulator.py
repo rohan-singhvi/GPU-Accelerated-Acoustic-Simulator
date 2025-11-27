@@ -161,9 +161,9 @@ def ray_trace_kernel(
             min_dist = 1e20
             nx, ny, nz = 0.0, 0.0, 0.0  # Surface Normal
 
-            # ---------------------------------------
+            # 
             #  LOGIC A: SHOEBOX (Room Type 0)
-            # ---------------------------------------
+            # 
             if room_type == 0:
                 room_x, room_y, room_z = room_dims[0], room_dims[1], room_dims[2]
 
@@ -200,9 +200,9 @@ def ray_trace_kernel(
                     if d < min_dist:
                         min_dist, nx, ny, nz = d, 0.0, 0.0, 1.0
 
-            # ---------------------------------------
+            # 
             #  LOGIC B: DOME / HEMISPHERE (Room Type 1)
-            # ---------------------------------------
+            # 
             elif room_type == 1:
                 radius = room_dims[0]
 
@@ -258,9 +258,9 @@ def ray_trace_kernel(
                         nx = mesh_normals[i, 0]
                         ny = mesh_normals[i, 1]
                         nz = mesh_normals[i, 2]
-            # ---------------------------------------
+            # 
             #  SHARED PHYSICS (Applied to all Rooms)
-            # ---------------------------------------
+            # 
             # safety check - we missed universe?
             if min_dist >= 1e19:
                 break

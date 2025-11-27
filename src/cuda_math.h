@@ -22,7 +22,7 @@
     }
 #endif
 
-// --- Shared Vector Math Operators (Host & Device) ---
+//  Shared Vector Math Operators (Host & Device) 
 // We define these as inline functions that work on both CPU and GPU
 
 #if defined(__CUDACC__)

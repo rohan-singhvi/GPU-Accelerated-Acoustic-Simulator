@@ -71,11 +71,11 @@ std::vector<float> apply_reverb_gpu(
     cudaMalloc(&d_dry_freq, complex_size * sizeof(cufftComplex));
     cudaMalloc(&d_ir_freq, complex_size * sizeof(cufftComplex));
     
-    // 1. Forward FFT
+    // Forward FFT
     cufftExecR2C(plan_fwd, d_dry_padded, d_dry_freq);
     cufftExecR2C(plan_fwd, d_ir_padded, d_ir_freq);
     
-    // 2. Complex Multiply (Convolution in Freq Domain)
+    // Complex Multiply (Convolution in Freq Domain)
     int threads = 256;
     int blocks = (complex_size + threads - 1) / threads;
     // Scale factor for IFFT (1/N)
@@ -83,13 +83,13 @@ std::vector<float> apply_reverb_gpu(
     
     complex_multiply_kernel<<<blocks, threads>>>(d_dry_freq, d_ir_freq, complex_size, scale);
     
-    // 3. Inverse FFT (Result goes back into d_dry_padded to save memory)
+    // Inverse FFT (Result goes back into d_dry_padded to save memory)
     // Note: C2R destroys input, which is fine here
     cufftExecC2R(plan_inv, d_dry_freq, d_dry_padded);
     
     cudaDeviceSynchronize();
     
-    // 4. Mix Helper
+    // Mix Helper
     // We need a separate buffer for the final mix to ensure clean "Dry" data
     // Actually, d_dry_padded now holds the "Wet" signal.
     // We need the original dry signal again on GPU for the mix.
