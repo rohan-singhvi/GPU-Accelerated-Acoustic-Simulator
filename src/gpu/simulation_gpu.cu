@@ -86,13 +86,6 @@ __global__ void ray_trace_kernel(
     float3* d_v0, float3* d_v1, float3* d_v2, float3* d_normals, int num_triangles
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (idx == 0) {
-        printf("DEBUG: GPU Kernel Running. RoomType: %d, Triangles: %d\n", room_type, num_triangles);
-        if (num_triangles > 0) {
-            printf("DEBUG: Triangle 0 v0: %f %f %f\n", d_v0[0].x, d_v0[0].y, d_v0[0].z);
-        }
-    }
     
     // bound check (assuming d_pos size matches num_rays)
     // can't easily check array size in CUDA, rely on launch bounds
