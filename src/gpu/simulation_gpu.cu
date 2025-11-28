@@ -5,7 +5,7 @@
 // Device Constants
 #define SPEED_OF_SOUND 343.0f
 #define SAMPLE_RATE 44100.0f
-#define LISTENER_RADIUS 0.5f  // Matches CPU
+#define LISTENER_RADIUS 0.5f
 #define MAX_BOUNCES 50
 
 // --- GPU RANDOM HELPER (Stateless) ---
@@ -163,9 +163,33 @@ __global__ void ray_trace_kernel(float3* d_pos, float3* d_dir, float3 room_dims,
                 }
             }
             intersect_sphere(px, dx, radius, min_dist, nx);
-        } else if (room_type == MESH) {
+        }
+        //  mesh
+        else if (room_type == MESH) {
             for (int i = 0; i < num_triangles; ++i) {
-                intersect_triangle(px, dx, d_v0[i], d_v1[i], d_v2[i], d_normals[i], min_dist, nx);
+                float3 v0 = d_v0[i];
+                float3 v1 = d_v1[i];
+                float3 v2 = d_v2[i];
+
+                float3 e1 = v1 - v0;
+                float3 e2 = v2 - v0;
+
+                // Cross Product
+                float3 calc_norm;
+                calc_norm.x = e1.y * e2.z - e1.z * e2.y;
+                calc_norm.y = e1.z * e2.x - e1.x * e2.z;
+                calc_norm.z = e1.x * e2.y - e1.y * e2.x;
+
+                // Normalize (Manual Math to fix "/" error)
+                float len_sq = dot(calc_norm, calc_norm);
+                if (len_sq > 1e-12f) {
+                    float invLen = rsqrtf(len_sq);  // Fast inverse square root
+                    calc_norm.x *= invLen;
+                    calc_norm.y *= invLen;
+                    calc_norm.z *= invLen;
+                }
+
+                intersect_triangle(px, dx, v0, v1, v2, calc_norm, min_dist, nx);
             }
         }
 
@@ -219,10 +243,7 @@ __global__ void ray_trace_kernel(float3* d_pos, float3* d_dir, float3 room_dims,
     }
 }
 
-// ==========================================
-//   HOST WRAPPER
-// ==========================================
-
+// wrapper
 void run_simulation_gpu(const SimulationParams& params, const MeshData& mesh,
                         std::vector<float>& h_impulse_response) {
     int N = params.num_rays;
