@@ -4,7 +4,7 @@
 
 #define SPEED_OF_SOUND 343.0f
 #define SAMPLE_RATE 44100.0f
-#define LISTENER_RADIUS 0.2f
+#define LISTENER_RADIUS 0.5f
 #define MAX_BOUNCES 50
 
 __device__ void intersect_sphere(
@@ -86,6 +86,13 @@ __global__ void ray_trace_kernel(
     float3* d_v0, float3* d_v1, float3* d_v2, float3* d_normals, int num_triangles
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx == 0) {
+        printf("DEBUG: GPU Kernel Running. RoomType: %d, Triangles: %d\n", room_type, num_triangles);
+        if (num_triangles > 0) {
+            printf("DEBUG: Triangle 0 v0: %f %f %f\n", d_v0[0].x, d_v0[0].y, d_v0[0].z);
+        }
+    }
     
     // bound check (assuming d_pos size matches num_rays)
     // can't easily check array size in CUDA, rely on launch bounds
@@ -145,28 +152,25 @@ __global__ void ray_trace_kernel(
                 float3 v1 = d_v1[i];
                 float3 v2 = d_v2[i];
 
-                // Calculate Geometric Normal on the fly
-                // This ensures we always have a valid normal perpendicular to the face
                 float3 e1 = v1 - v0;
                 float3 e2 = v2 - v0;
                 
-                // Manual Cross Product (e1 x e2)
-                float3 calculated_normal;
-                calculated_normal.x = e1.y * e2.z - e1.z * e2.y;
-                calculated_normal.y = e1.z * e2.x - e1.x * e2.z;
-                calculated_normal.z = e1.x * e2.y - e1.y * e2.x;
+                // Cross Product
+                float3 calc_norm;
+                calc_norm.x = e1.y * e2.z - e1.z * e2.y;
+                calc_norm.y = e1.z * e2.x - e1.x * e2.z;
+                calc_norm.z = e1.x * e2.y - e1.y * e2.x;
                 
-                // Normalize it
-                float len = sqrtf(dot(calculated_normal, calculated_normal));
-                if (len > 1e-6f) {
-                    float invLen = 1.0f / len;
-                    calculated_normal.x *= invLen;
-                    calculated_normal.y *= invLen;
-                    calculated_normal.z *= invLen;
+                // Normalize (Manual Math to fix "/" error)
+                float len_sq = dot(calc_norm, calc_norm);
+                if (len_sq > 1e-12f) {
+                    float invLen = rsqrtf(len_sq); // Fast inverse square root
+                    calc_norm.x *= invLen;
+                    calc_norm.y *= invLen;
+                    calc_norm.z *= invLen;
                 }
 
-                // Pass the calculated normals
-                intersect_triangle(px, dx, v0, v1, v2, calculated_normal, min_dist, nx);
+                intersect_triangle(px, dx, v0, v1, v2, calc_norm, min_dist, nx);
             }
         }
         
