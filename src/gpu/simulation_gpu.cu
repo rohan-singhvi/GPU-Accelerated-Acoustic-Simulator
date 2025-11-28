@@ -159,7 +159,10 @@ __global__ void ray_trace_kernel(
                 // Normalize it
                 float len = sqrtf(dot(calculated_normal, calculated_normal));
                 if (len > 1e-6f) {
-                    calculated_normal = calculated_normal / len;
+                    float invLen = 1.0f / len;
+                    calculated_normal.x *= invLen;
+                    calculated_normal.y *= invLen;
+                    calculated_normal.z *= invLen;
                 }
 
                 // Pass the calculated normals
