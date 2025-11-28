@@ -185,7 +185,7 @@ __global__ void ray_trace_kernel(
 }
 
 // wrapper
-void run_acoustic_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& h_impulse_response) {
+void run_simulation_gpu(const SimulationParams& params, const MeshData& mesh, std::vector<float>& h_impulse_response) {
     int N = params.num_rays;
     
     // generate rays
