@@ -85,3 +85,25 @@ if(FFTW3_FOUND)
     target_link_libraries(acoustic_sim PRIVATE ${FFTW3_LIBRARIES})
     target_compile_definitions(acoustic_sim PRIVATE USE_FFTW)
 endif()
+
+
+find_program(CLANG_FORMAT "clang-format")
+if(CLANG_FORMAT)
+    # Find all C++, Header, and CUDA files in src and include
+    file(GLOB_RECURSE ALL_SOURCE_FILES 
+        "src/*.cpp" 
+        "src/*.h" 
+        "src/*.cu" 
+        "src/*.cuh" 
+        "include/*.h"
+    )
+
+    add_custom_target(format
+        COMMAND ${CLANG_FORMAT} -i -style=file ${ALL_SOURCE_FILES}
+        COMMENT "Auto-formatting all source code..."
+        VERBATIM
+    )
+    message(STATUS "Added 'make format' target")
+else()
+    message(WARNING "clang-format not found. 'make format' will not be available.")
+endif()

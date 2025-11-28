@@ -1,12 +1,14 @@
-#include "convolution.h"
-#include <iostream>
 #include <algorithm>
+#include <iostream>
+
+#include "convolution.h"
 
 #ifdef USE_FFTW
 #include <fftw3.h>
 #endif
 
-std::vector<float> apply_reverb_cpu(const std::vector<float>& dry, const std::vector<float>& ir, float mix) {
+std::vector<float> apply_reverb_cpu(const std::vector<float>& dry, const std::vector<float>& ir,
+                                    float mix) {
     int n_dry = dry.size();
     int n_ir = ir.size();
     int n_out = n_dry + n_ir - 1;
@@ -16,7 +18,7 @@ std::vector<float> apply_reverb_cpu(const std::vector<float>& dry, const std::ve
     std::cout << "Using FFTW3 for CPU Convolution..." << std::endl;
     // Next power of 2
     int fft_size = 1;
-    while(fft_size < n_out) fft_size *= 2;
+    while (fft_size < n_out) fft_size *= 2;
 
     // Allocate FFTW buffers
     float* in_dry = fftwf_alloc_real(fft_size);
@@ -43,21 +45,23 @@ std::vector<float> apply_reverb_cpu(const std::vector<float>& dry, const std::ve
     // Complex Multiply
     int complex_size = fft_size / 2 + 1;
     float scale = 1.0f / (float)fft_size;
-    
-    for(int i=0; i<complex_size; ++i) {
-        float ar = out_dry[i][0]; float ai = out_dry[i][1];
-        float br = out_ir[i][0];  float bi = out_ir[i][1];
-        
+
+    for (int i = 0; i < complex_size; ++i) {
+        float ar = out_dry[i][0];
+        float ai = out_dry[i][1];
+        float br = out_ir[i][0];
+        float bi = out_ir[i][1];
+
         // (a+bi)(c+di)
-        out_dry[i][0] = (ar*br - ai*bi) * scale;
-        out_dry[i][1] = (ar*bi + ai*br) * scale;
+        out_dry[i][0] = (ar * br - ai * bi) * scale;
+        out_dry[i][1] = (ar * bi + ai * br) * scale;
     }
 
     // Execute Inverse
     fftwf_execute(p_inv);
 
     // Mix
-    for(int i=0; i<n_out; ++i) {
+    for (int i = 0; i < n_out; ++i) {
         float d = (i < n_dry) ? dry[i] : 0.0f;
         result[i] = d * (1.0f - mix) + out_final[i] * mix;
     }
@@ -65,8 +69,11 @@ std::vector<float> apply_reverb_cpu(const std::vector<float>& dry, const std::ve
     fftwf_destroy_plan(p_fwd_dry);
     fftwf_destroy_plan(p_fwd_ir);
     fftwf_destroy_plan(p_inv);
-    fftwf_free(in_dry); fftwf_free(in_ir);
-    fftwf_free(out_dry); fftwf_free(out_ir); fftwf_free(out_final);
+    fftwf_free(in_dry);
+    fftwf_free(in_ir);
+    fftwf_free(out_dry);
+    fftwf_free(out_ir);
+    fftwf_free(out_final);
 
 #else
     std::cout << "WARNING: No FFTW3 found. Using SLOW naive convolution." << std::endl;

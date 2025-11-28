@@ -1,11 +1,12 @@
-#include <iostream>
-#include <vector>
-#include <string>
 #include <cstring>
-#include "simulation.h"
+#include <iostream>
+#include <string>
+#include <vector>
+
 #include "convolution.h"
-#include "wav_io.h"
 #include "mesh_loader.h"
+#include "simulation.h"
+#include "wav_io.h"
 
 void print_usage() {
     std::cout << "Usage: ./acoustic_sim [options]\n";
@@ -27,7 +28,6 @@ float3 parse_dims(const char* arg) {
     return make_float3(x, y, z);
 }
 
-
 void run_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& ir) {
 #ifdef ENABLE_CUDA
     std::cout << "Backend: CUDA GPU" << std::endl;
@@ -38,14 +38,14 @@ void run_simulation(const SimulationParams& params, const MeshData& mesh, std::v
 #endif
 }
 
-std::vector<float> apply_reverb(const std::vector<float>& dry, const std::vector<float>& ir, float mix) {
+std::vector<float> apply_reverb(const std::vector<float>& dry, const std::vector<float>& ir,
+                                float mix) {
 #ifdef ENABLE_CUDA
     return apply_reverb_gpu(dry, ir, mix);
 #else
     return apply_reverb_cpu(dry, ir, mix);
 #endif
 }
-
 
 int main(int argc, char** argv) {
     SimulationParams params;
@@ -55,9 +55,9 @@ int main(int argc, char** argv) {
     params.source_pos = make_float3(2.0f, 1.5f, 1.5f);
     params.listener_pos = make_float3(8.0f, 1.5f, 1.5f);
     // Defaults
-    params.wall_absorption = 0.15f; // Concrete-ish
-    params.wall_transmission = 0.0f; // Solid
-    
+    params.wall_absorption = 0.15f;   // Concrete-ish
+    params.wall_transmission = 0.0f;  // Solid
+
     std::string outfile = "out.wav";
     std::string input_audio_file = "";
     float mix = 0.4f;
@@ -65,18 +65,28 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--room") == 0 && i + 1 < argc) {
             std::string type = argv[++i];
-            if (type == "shoebox") params.room_type = SHOEBOX;
-            else if (type == "dome") params.room_type = DOME;
-            else if (type == "mesh") params.room_type = MESH;
-        }
-        else if (strcmp(argv[i], "--dims") == 0 && i + 1 < argc) params.room_dims = parse_dims(argv[++i]);
-        else if (strcmp(argv[i], "--mesh") == 0 && i + 1 < argc) params.mesh_path = argv[++i];
-        else if (strcmp(argv[i], "--rays") == 0 && i + 1 < argc) params.num_rays = atoi(argv[++i]);
-        else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outfile = argv[++i];
-        else if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) input_audio_file = argv[++i];
-        else if (strcmp(argv[i], "--mix") == 0 && i + 1 < argc) mix = atof(argv[++i]);
-        else if (strcmp(argv[i], "--absorption") == 0 && i + 1 < argc) params.wall_absorption = atof(argv[++i]);
-        else if (strcmp(argv[i], "--transmission") == 0 && i + 1 < argc) params.wall_transmission = atof(argv[++i]);
+            if (type == "shoebox")
+                params.room_type = SHOEBOX;
+            else if (type == "dome")
+                params.room_type = DOME;
+            else if (type == "mesh")
+                params.room_type = MESH;
+        } else if (strcmp(argv[i], "--dims") == 0 && i + 1 < argc)
+            params.room_dims = parse_dims(argv[++i]);
+        else if (strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)
+            params.mesh_path = argv[++i];
+        else if (strcmp(argv[i], "--rays") == 0 && i + 1 < argc)
+            params.num_rays = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc)
+            outfile = argv[++i];
+        else if (strcmp(argv[i], "--input") == 0 && i + 1 < argc)
+            input_audio_file = argv[++i];
+        else if (strcmp(argv[i], "--mix") == 0 && i + 1 < argc)
+            mix = atof(argv[++i]);
+        else if (strcmp(argv[i], "--absorption") == 0 && i + 1 < argc)
+            params.wall_absorption = atof(argv[++i]);
+        else if (strcmp(argv[i], "--transmission") == 0 && i + 1 < argc)
+            params.wall_transmission = atof(argv[++i]);
     }
 
     MeshData mesh;
@@ -95,7 +105,7 @@ int main(int argc, char** argv) {
     if (!input_audio_file.empty()) {
         std::cout << "Loading input audio: " << input_audio_file << "...\n";
         WavData input = read_wav(input_audio_file);
-        
+
         if (!input.success) {
             std::cerr << "Failed to load input audio (Ensure it is 16-bit PCM WAV).\n";
             return 1;
@@ -103,13 +113,12 @@ int main(int argc, char** argv) {
 
         std::cout << "Applying Reverb (Convolution)... Mix: " << mix << "\n";
         std::vector<float> wet_result = apply_reverb(input.samples, impulse_response, mix);
-        
+
         write_wav(outfile, wet_result, input.sample_rate);
-    } 
-    else {
+    } else {
         std::cout << "No input audio provided. Saving raw Room Impulse Response.\n";
         write_wav(outfile, impulse_response, 44100);
     }
-    
+
     return 0;
 }

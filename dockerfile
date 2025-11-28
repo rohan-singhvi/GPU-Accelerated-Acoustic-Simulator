@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     python3 \
     python3-pip \
+    clang-format \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python Helper Dependencies

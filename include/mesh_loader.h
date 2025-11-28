@@ -1,14 +1,14 @@
 #ifndef MESH_LOADER_H
 #define MESH_LOADER_H
 
-#include <vector>
-#include <string>
 #include <fstream>
-#include <sstream>
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 // CRITICAL FIX: Do NOT include <cuda_runtime.h> directly.
-// Include our wrapper "cuda_math.h" instead. 
+// Include our wrapper "cuda_math.h" instead.
 // This ensures we get 'float3' even if CUDA is disabled.
 #include "cuda_math.h"
 
@@ -42,25 +42,23 @@ inline MeshData load_obj(const std::string& filename) {
             float x, y, z;
             ss >> x >> y >> z;
             temp_vertices.push_back(make_float3(x, y, z));
-        } 
-        else if (prefix == "f") {
+        } else if (prefix == "f") {
             // Very basic face parsing "f v1 v2 v3" or "f v1//n1 v2//n2 v3//n3"
             std::string segment;
             int v_indices[3];
             int i = 0;
             while (ss >> segment && i < 3) {
                 size_t slash = segment.find('/');
-                std::string v_str = (slash != std::string::npos) ? segment.substr(0, slash) : segment;
-                v_indices[i] = std::stoi(v_str) - 1; // OBJ is 1-indexed
+                std::string v_str =
+                    (slash != std::string::npos) ? segment.substr(0, slash) : segment;
+                v_indices[i] = std::stoi(v_str) - 1;  // OBJ is 1-indexed
                 i++;
             }
 
             if (i == 3) {
                 // Bounds check
-                if(v_indices[0] < temp_vertices.size() && 
-                   v_indices[1] < temp_vertices.size() && 
-                   v_indices[2] < temp_vertices.size()) 
-                {
+                if (v_indices[0] < temp_vertices.size() && v_indices[1] < temp_vertices.size() &&
+                    v_indices[2] < temp_vertices.size()) {
                     float3 p0 = temp_vertices[v_indices[0]];
                     float3 p1 = temp_vertices[v_indices[1]];
                     float3 p2 = temp_vertices[v_indices[2]];
@@ -73,22 +71,24 @@ inline MeshData load_obj(const std::string& filename) {
                     // Calculate Face Normal
                     float3 e1 = p1 - p0;
                     float3 e2 = p2 - p0;
-                    
+
                     float3 n;
                     n.x = e1.y * e2.z - e1.z * e2.y;
                     n.y = e1.z * e2.x - e1.x * e2.z;
                     n.z = e1.x * e2.y - e1.y * e2.x;
-                    
-                    float len = sqrtf(n.x*n.x + n.y*n.y + n.z*n.z);
+
+                    float len = sqrtf(n.x * n.x + n.y * n.y + n.z * n.z);
                     if (len > 1e-6f) {
-                        n.x /= len; n.y /= len; n.z /= len;
+                        n.x /= len;
+                        n.y /= len;
+                        n.z /= len;
                     }
                     mesh.normals.push_back(n);
                 }
             }
         }
     }
-    
+
     std::cout << "Loaded " << mesh.num_triangles << " triangles from " << filename << std::endl;
     return mesh;
 }

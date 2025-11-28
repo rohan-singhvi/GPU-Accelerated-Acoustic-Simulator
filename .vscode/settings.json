@@ -1,5 +1,16 @@
 {
     "files.associations": {
         "vector": "cpp"
+    },
+
+    "C_Cpp.formatting": "clangFormat",
+    "clang-format.executable": "/usr/bin/clang-format",
+    "editor.formatOnSave": true,
+    "[cpp]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[cuda]": {
+        "editor.defaultFormatter": "ms-vscode.cpptools"
     }
+
 }
