@@ -140,10 +140,30 @@ __global__ void ray_trace_kernel(
         }
         //  mesh 
         else if (room_type == MESH) {
-            // Naive loop over all triangles
             for(int i = 0; i < num_triangles; ++i) {
-                // In a real optimized engine, this would traverse a BVH
-                intersect_triangle(px, dx, d_v0[i], d_v1[i], d_v2[i], d_normals[i], min_dist, nx);
+                float3 v0 = d_v0[i];
+                float3 v1 = d_v1[i];
+                float3 v2 = d_v2[i];
+
+                // Calculate Geometric Normal on the fly
+                // This ensures we always have a valid normal perpendicular to the face
+                float3 e1 = v1 - v0;
+                float3 e2 = v2 - v0;
+                
+                // Manual Cross Product (e1 x e2)
+                float3 calculated_normal;
+                calculated_normal.x = e1.y * e2.z - e1.z * e2.y;
+                calculated_normal.y = e1.z * e2.x - e1.x * e2.z;
+                calculated_normal.z = e1.x * e2.y - e1.y * e2.x;
+                
+                // Normalize it
+                float len = sqrtf(dot(calculated_normal, calculated_normal));
+                if (len > 1e-6f) {
+                    calculated_normal = calculated_normal / len;
+                }
+
+                // Pass the calculated normals
+                intersect_triangle(px, dx, v0, v1, v2, calculated_normal, min_dist, nx);
             }
         }
         
