@@ -4,10 +4,7 @@ project(AcousticSimulator LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
 
-find_package(OpenMP) 
-if(OpenMP_CXX_FOUND)
-    link_libraries(OpenMP::OpenMP_CXX)
-endif()
+find_package(TBB REQUIRED)
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
@@ -69,6 +66,8 @@ endif()
 add_executable(acoustic_sim ${SOURCES})
 
 # --- Compile Definitions ---
+target_link_libraries(acoustic_sim PRIVATE TBB::tbb)
+
 if(ENABLE_CUDA)
     target_compile_definitions(acoustic_sim PRIVATE ENABLE_CUDA=1)
     target_link_libraries(acoustic_sim PRIVATE CUDA::cufft CUDA::cudart)

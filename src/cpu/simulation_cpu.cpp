@@ -1,9 +1,14 @@
 #include "simulation.h"
 #include <cmath>
-#include <omp.h> // for multithreading
 #include <iostream>
 #include <algorithm>
-#include <atomic> // Added for hit counting
+#include <atomic> 
+
+// TBB Includes
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/enumerable_thread_specific.h>
+#include <tbb/task_arena.h> // Required for max_concurrency() check
 
 // Ray-Triangle Intersection (Möller–Trumbore) 
 // Returns distance t, or 1e20 if miss. Updates normal if hit.
@@ -62,164 +67,176 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
     // 0.5 to ensure hits with lower ray counts
     const float LISTENER_RADIUS = 0.5f; 
 
-    std::cout << "Running CPU Simulation (OpenMP Threads: " << omp_get_max_threads() << ")..." << std::endl;
+    std::cout << "Running CPU Simulation (TBB Threads: " << tbb::this_task_arena::max_concurrency() << ")..." << std::endl;
+    
     if (params.room_type == MESH) {
         std::cout << "Mesh Mode: Checking " << mesh.num_triangles << " triangles per ray." << std::endl;
     }
 
-    // Thread-local accumulation buffers
-    int num_threads = omp_get_max_threads();
-    std::vector<std::vector<float>> thread_irs(num_threads, std::vector<float>(ir_len, 0.0f));
+    // TBB Thread Local Storage
+    // It automatically creates a local std::vector<float> for every thread that needs one.
+    tbb::enumerable_thread_specific<std::vector<float>> tls_irs([ir_len]() {
+        return std::vector<float>(ir_len, 0.0f); // Initializer
+    });
     
-    // Global Hit Counter for Debugging
+    // Global Hit Counter
     std::atomic<int> total_hits{0};
 
-    #pragma omp parallel for schedule(dynamic)
-    for (int i = 0; i < N; ++i) {
-        int tid = omp_get_thread_num();
+    tbb::parallel_for(tbb::blocked_range<int>(0, N), 
+        [&](const tbb::blocked_range<int>& range) {
+
+        // Get reference to this thread's local IR buffer
+        auto& local_ir = tls_irs.local();
+
+        // Iterate over the chunk assigned to this thread
+        for (int i = range.begin(); i != range.end(); ++i) {
         
-        // Simple Pseudo-Random Number Generator (PRNG) per ray
-        unsigned int seed = i * 747796405 + 2891336453;
-        auto rand_float = [&seed]() { 
-            seed = seed * 1103515245 + 12345;
-            return (float)((seed / 65536) % 32768) / 32768.0f; 
-        };
+            // Simple Pseudo-Random Number Generator (PRNG) per ray
+            unsigned int seed = i * 747796405 + 2891336453;
+            auto rand_float = [&seed]() { 
+                seed = seed * 1103515245 + 12345;
+                return (float)((seed / 65536) % 32768) / 32768.0f; 
+            };
 
-        // random direction vector
-        float u = rand_float() * 2.0f - 1.0f;
-        float v = rand_float() * 2.0f - 1.0f;
-        float w = rand_float() * 2.0f - 1.0f;
-        float3 dx = normalize(make_float3(u, v, w));
-        float3 px = params.source_pos;
+            // random direction vector
+            float u = rand_float() * 2.0f - 1.0f;
+            float v = rand_float() * 2.0f - 1.0f;
+            float w = rand_float() * 2.0f - 1.0f;
+            float3 dx = normalize(make_float3(u, v, w));
+            float3 px = params.source_pos;
 
-        float dist_traveled = 0.0f;
-        float energy = 1.0f;
+            float dist_traveled = 0.0f;
+            float energy = 1.0f;
 
-        for (int bounce = 0; bounce < 50; ++bounce) {
-             float min_dist = 1e20f;
-             float3 nx = make_float3(0,0,0);
-             int hit_tri_idx = -1; // debug
+            for (int bounce = 0; bounce < 50; ++bounce) {
+                float min_dist = 1e20f;
+                float3 nx = make_float3(0,0,0);
+                int hit_tri_idx = -1; // debug
 
-             //  shoebox (put this in a function)
-             if (params.room_type == SHOEBOX) {
-                if (dx.x > 0.0f) {
-                    float d = (params.room_dims.x - px.x) / dx.x;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(-1, 0, 0); }
-                } else {
-                    float d = (0.0f - px.x) / dx.x;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(1, 0, 0); }
-                }
-                if (dx.y > 0.0f) {
-                    float d = (params.room_dims.y - px.y) / dx.y;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(0, -1, 0); }
-                } else {
-                    float d = (0.0f - px.y) / dx.y;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
-                }
-                if (dx.z > 0.0f) {
-                    float d = (params.room_dims.z - px.z) / dx.z;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, -1); }
-                } else {
-                    float d = (0.0f - px.z) / dx.z;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); }
-                }
-             }
-             //  dome (put this in a function)
-             else if (params.room_type == DOME) {
-                float radius = params.room_dims.x;
-                // Floor
-                if (dx.y < 0.0f) {
-                    float d = (0.0f - px.y) / dx.y;
-                    if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
-                }
-                // Sphere Intersect 
-                float b = 2.0f * dot(px, dx);
-                float c = dot(px, px) - radius * radius;
-                float disc = b*b - 4.0f*c;
-                if(disc >= 0.0f) {
-                    float sqrt_disc = sqrtf(disc);
-                    float t1 = (-b - sqrt_disc)/2.0f;
-                    float t2 = (-b + sqrt_disc)/2.0f;
-                    float t = (t1 > 1e-3f) ? t1 : ((t2 > 1e-3f) ? t2 : 1e20f);
-                    if(t < min_dist) {
-                        min_dist = t;
-                        nx = normalize(px + dx * t);
+                //  shoebox (put this in a function)
+                if (params.room_type == SHOEBOX) {
+                    if (dx.x > 0.0f) {
+                        float d = (params.room_dims.x - px.x) / dx.x;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(-1, 0, 0); }
+                    } else {
+                        float d = (0.0f - px.x) / dx.x;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(1, 0, 0); }
+                    }
+                    if (dx.y > 0.0f) {
+                        float d = (params.room_dims.y - px.y) / dx.y;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(0, -1, 0); }
+                    } else {
+                        float d = (0.0f - px.y) / dx.y;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
+                    }
+                    if (dx.z > 0.0f) {
+                        float d = (params.room_dims.z - px.z) / dx.z;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, -1); }
+                    } else {
+                        float d = (0.0f - px.z) / dx.z;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(0, 0, 1); }
                     }
                 }
-             }
-             //  mesh (put this in a function) 
-             else if (params.room_type == MESH) {
-                 float3 temp_n;
-                 for(int t=0; t<mesh.num_triangles; ++t) {
-                     float dist = intersect_triangle_cpu(
-                         px, dx, 
-                         mesh.v0[t], mesh.v1[t], mesh.v2[t], 
-                         mesh.normals[t], 
-                         temp_n
-                     );
-                     
-                     if (dist < min_dist) {
-                         min_dist = dist;
-                         nx = temp_n;
-                         hit_tri_idx = t;
-                     }
-                 }
-             }
+                //  dome (put this in a function)
+                else if (params.room_type == DOME) {
+                    float radius = params.room_dims.x;
+                    // Floor
+                    if (dx.y < 0.0f) {
+                        float d = (0.0f - px.y) / dx.y;
+                        if (d < min_dist) { min_dist = d; nx = make_float3(0, 1, 0); }
+                    }
+                    // Sphere Intersect 
+                    float b = 2.0f * dot(px, dx);
+                    float c = dot(px, px) - radius * radius;
+                    float disc = b*b - 4.0f*c;
+                    if(disc >= 0.0f) {
+                        float sqrt_disc = sqrtf(disc);
+                        float t1 = (-b - sqrt_disc)/2.0f;
+                        float t2 = (-b + sqrt_disc)/2.0f;
+                        float t = (t1 > 1e-3f) ? t1 : ((t2 > 1e-3f) ? t2 : 1e20f);
+                        if(t < min_dist) {
+                            min_dist = t;
+                            nx = normalize(px + dx * t);
+                        }
+                    }
+                }
+                //  mesh (put this in a function) 
+                else if (params.room_type == MESH) {
+                    float3 temp_n;
+                    for(int t=0; t<mesh.num_triangles; ++t) {
+                        float dist = intersect_triangle_cpu(
+                            px, dx, 
+                            mesh.v0[t], mesh.v1[t], mesh.v2[t], 
+                            mesh.normals[t], 
+                            temp_n
+                        );
+                        
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            nx = temp_n;
+                            hit_tri_idx = t;
+                        }
+                    }
+                }
 
-             //  listener hit?
-             float3 to_l = params.listener_pos - px;
-             float t_proj = dot(to_l, dx);
-             
-             // if listener is in front of us and closer than the wall
-             if (t_proj > 0 && t_proj < min_dist) {
-                 float3 closest = px + dx * t_proj;
-                 float dist_sq = length_sq(params.listener_pos - closest);
-                 if (dist_sq < LISTENER_RADIUS*LISTENER_RADIUS) {
-                     float total_dist = dist_traveled + t_proj;
-                     int idx = (int)((total_dist / SPEED_OF_SOUND) * SAMPLE_RATE);
-                     if (idx < ir_len) {
-                         thread_irs[tid][idx] += energy;
-                         total_hits++; // Count the hit!
-                     }
-                 }
-             }
-             if (min_dist >= 1e19f) {
-                 if (i == 0 && bounce == 0) printf("[Ray 0] Missed Mesh completely.\n");
-                 break;
-             }
+                //  listener hit?
+                float3 to_l = params.listener_pos - px;
+                float t_proj = dot(to_l, dx);
+                
+                // if listener is in front of us and closer than the wall
+                if (t_proj > 0 && t_proj < min_dist) {
+                    float3 closest = px + dx * t_proj;
+                    float dist_sq = length_sq(params.listener_pos - closest);
+                    if (dist_sq < LISTENER_RADIUS*LISTENER_RADIUS) {
+                        float total_dist = dist_traveled + t_proj;
+                        int idx = (int)((total_dist / SPEED_OF_SOUND) * SAMPLE_RATE);
+                        if (idx < ir_len) {
+                            // FIX 2: Use local_ir instead of thread_irs[tid]
+                            local_ir[idx] += energy;
+                            total_hits++; 
+                        }
+                    }
+                }
+                if (min_dist >= 1e19f) {
+                    // if (i == 0 && bounce == 0) printf("[Ray 0] Missed Mesh completely.\n");
+                    break;
+                }
 
-             // debug ray 0
-             if (i == 0 && bounce < 3) {
-                 printf("[Ray 0] Bounce %d: Hit Wall at %.2f (Tri: %d)\n", bounce, min_dist, hit_tri_idx);
-             }
+                // debug ray 0 (Be careful with I/O in parallel loops)
+                // if (i == 0 && bounce < 3) {
+                //    printf("[Ray 0] Bounce %d: Hit Wall at %.2f (Tri: %d)\n", bounce, min_dist, hit_tri_idx);
+                // }
 
-             // move along reflection
-             float3 hit_point = px + dx * min_dist;
-             dist_traveled += min_dist;
+                // move along reflection
+                float3 hit_point = px + dx * min_dist;
+                dist_traveled += min_dist;
 
-             float d_dot_n = dot(dx, nx);
-             float3 reflection = dx - 2.0f * d_dot_n * nx;
-             
-             // update dir (normalize to prevent float error accumulation)
-             dx = normalize(reflection);
+                float d_dot_n = dot(dx, nx);
+                float3 reflection = dx - 2.0f * d_dot_n * nx;
+                
+                // update dir (normalize to prevent float error accumulation)
+                dx = normalize(reflection);
 
-             // nudge
-             px = hit_point + dx * 0.001f;
+                // nudge
+                px = hit_point + dx * 0.001f;
 
-             // absorb 15%
-             energy *= 0.85f;
-             if (energy < 0.001f) break;
+                // absorb 15%
+                energy *= 0.85f;
+                if (energy < 0.001f) break;
+            }
         }
-    }
+    }); // FIX 3: Added closing );
 
     std::cout << "Simulation Complete. Total Listener Hits: " << total_hits << std::endl;
     if (total_hits == 0) {
         std::cout << "WARNING: No rays hit the listener! Try increasing --rays or the listener size is too small." << std::endl;
     }
 
-    for(int t=0; t<num_threads; ++t) {
+    // FIX 4: TBB Merge Logic
+    // We iterate through the enumerable_thread_specific storage and sum them up
+    for(const auto& local_buffer : tls_irs) {
         for(int i=0; i<ir_len; ++i) {
-            ir[i] += thread_irs[t][i];
+            ir[i] += local_buffer[i];
         }
     }
 }

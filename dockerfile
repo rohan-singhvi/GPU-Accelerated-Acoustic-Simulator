@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     git \
     libfftw3-dev \
+    libtbb-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
