@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  docker-build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        # This builds the 'deploy' stage, which runs 'cmake' and 'make'.
+        # If this fails, your PR fails.
+        run: docker build --target deploy -t acoustic-sim:test .
+
+      - name: Run Smoke Test inside Docker
+        # We override the default CMD to run a quick low-ray simulation.
+        # This proves the binary works and library linking (TBB/FFTW) is correct.
+        run: |
+          docker run --rm acoustic-sim:test \
+          ./build/acoustic_sim --room shoebox --dims 10,10,10 --rays 1000 --out test.wav
