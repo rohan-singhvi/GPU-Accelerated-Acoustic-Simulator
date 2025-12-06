@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir numpy scipy matplotlib soundfile
+RUN pip3 install --no-cache-dir numpy scipy matplotlib soundfile trimesh
 
 # We stop here for development. Source code is NOT copied; it will be mounted live.
 FROM base AS dev

@@ -1,11 +1,11 @@
-# GPU-Accelerated Acoustic Simulator (Physics-Enhanced)
+# GPU-Accelerated Acoustic Simulator (C++/CUDA)
 
 A high-performance, hybrid acoustic ray tracer written in **C++17** and **CUDA**.
 
-This engine simulates sound propagation in 3D spaces to generate realistic **Room Impulse Responses (RIR)**. It features a **Stochastic Ray Tracing** engine that models physical phenomena like diffuse reflection (scattering), wall transmission (insulation), and absorption.
+This engine simulates sound propagation in 3D spaces to generate realistic **Room Impulse Responses (RIR)**. It features a **Stochastic Ray Tracing** engine that models physical phenomena like diffuse reflection (scattering), wall transmission (insulation), and absorption. It features a hybrid architecture that automatically detects your hardware:
 
 * **NVIDIA GPU:** Runs massively parallel ray tracing using CUDA.
-* **CPU (Mac/Linux):** Falls back to multi-threaded OpenMP/TBB + FFTW for compatibility.
+* **CPU (Mac/Linux):** Falls back to multi-threaded TBB + FFTW for compatibility.
 
 ## Features
 
@@ -28,11 +28,11 @@ You only need **Docker** installed.
 
 ### 1. Build the Environment
 
-The Docker setup handles all C++ toolchains (CMake, NVCC, FFTW) and Python analysis dependencies (NumPy, Matplotlib, SoundFile).
+The Docker setup handles all C++ toolchains (CMake, NVCC, FFTW) and Python analysis dependencies (NumPy, Matplotlib, SoundFile, Scipy, Trimesh).
 
 ```bash
 docker compose up -d --build
-````
+```
 
 ### 2\. Enter the Container
 
@@ -138,6 +138,12 @@ python3 ../visualize.py techno_dry.wav wet_result.wav
 ```
 
 *Output: `acoustic_analysis.png`*
+
+**3. Generate a Test Mesh (Icosphere)**
+If you don't have a 3D model, run this one-liner to create a sphere mesh:
+```bash
+python3 -c "import trimesh; trimesh.creation.icosphere(radius=8).export('../test_sphere.obj')"
+```
 
 ## CLI Reference
 
