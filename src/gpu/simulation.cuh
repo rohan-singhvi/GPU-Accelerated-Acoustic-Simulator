@@ -6,6 +6,13 @@
 #include "cuda_math.h"
 #include "mesh_loader.h"
 
+struct MaterialParams {
+    float absorption;   // 0.0 to 1.0 (Energy loss on bounce)
+    float scattering;   // 0.0 (Smooth) to 1.0 (Rough/Diffusive)
+    float transmission; // 0.0 (Opaque) to 1.0 (Transparent paper)
+    float thickness;    // Wall thickness in meters (for ray offset)
+};
+
 enum RoomType {
     SHOEBOX = 0,
     DOME = 1,
@@ -19,6 +26,8 @@ struct SimulationParams {
     float3 source_pos;
     float3 listener_pos;
     std::string mesh_path;
+
+    MaterialParams material; //can be expanded to per-mesh-id later?
 };
 
 // Host wrapper to launch kernel

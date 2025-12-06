@@ -6,6 +6,13 @@
 #include "cuda_math.h"
 #include "mesh_loader.h"
 
+struct MaterialParams {
+    float absorption;   // 0.0 to 1.0 (Energy loss)
+    float scattering;   // 0.0 to 1.0 (Roughness/Diffusion)
+    float transmission; // 0.0 to 1.0 (Sound passing through walls)
+    float thickness;    // Wall thickness in meters
+};
+
 enum RoomType { SHOEBOX = 0, DOME = 1, MESH = 2 };
 
 struct SimulationParams {
@@ -15,6 +22,8 @@ struct SimulationParams {
     float3 source_pos;
     float3 listener_pos;
     std::string mesh_path;
+    
+    MaterialParams material;
 };
 
 // Main Entry Point (Dispatcher)

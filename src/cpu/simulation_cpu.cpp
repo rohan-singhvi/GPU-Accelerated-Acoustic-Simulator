@@ -3,12 +3,29 @@
 #include <iostream>
 #include <algorithm>
 #include <atomic> 
+#include <random>
 
 // TBB Includes
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/task_arena.h> // Required for max_concurrency() check
+
+inline float3 random_cosine_hemisphere(float u1, float u2, float3 normal) {
+    float r = sqrtf(u1);
+    float theta = 6.2831853f * u2;
+    float x = r * cosf(theta);
+    float y = r * sinf(theta);
+    float z = sqrtf(1.0f - u1); // Cosine weighted
+
+    // Orthonormal basis construction to align z with 'normal'
+    float3 w = normal;
+    float3 a = (fabs(w.x) > 0.9f) ? make_float3(0, 1, 0) : make_float3(1, 0, 0);
+    float3 u = normalize(cross(a, w));
+    float3 v = cross(w, u);
+
+    return u * x + v * y + w * z;
+}
 
 // Ray-Triangle Intersection (Möller–Trumbore) 
 // Returns distance t, or 1e20 if miss. Updates normal if hit.
@@ -191,7 +208,6 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                         float total_dist = dist_traveled + t_proj;
                         int idx = (int)((total_dist / SPEED_OF_SOUND) * SAMPLE_RATE);
                         if (idx < ir_len) {
-                            // FIX 2: Use local_ir instead of thread_irs[tid]
                             local_ir[idx] += energy;
                             total_hits++; 
                         }
@@ -202,37 +218,58 @@ void run_simulation_cpu(const SimulationParams& params, const MeshData& mesh, st
                     break;
                 }
 
-                // debug ray 0 (Be careful with I/O in parallel loops)
-                // if (i == 0 && bounce < 3) {
-                //    printf("[Ray 0] Bounce %d: Hit Wall at %.2f (Tri: %d)\n", bounce, min_dist, hit_tri_idx);
-                // }
-
-                // move along reflection
-                float3 hit_point = px + dx * min_dist;
-                dist_traveled += min_dist;
-
-                float d_dot_n = dot(dx, nx);
-                float3 reflection = dx - 2.0f * d_dot_n * nx;
+                float rng_trans = rand_float();
                 
-                // update dir (normalize to prevent float error accumulation)
-                dx = normalize(reflection);
+                // if random roll < transmission coeff, we go THROUGH the wall
+                if (rng_trans < params.material.transmission) {
+                    // move ray through wall (thickness)
+                    px = px + dx * (min_dist + params.material.thickness);
+                    dist_traveled += min_dist + params.material.thickness;
+                    
+                    // transmission loss
+                    // if transmission is 0.1, we keep 0.1 energy? 
+                    // i think we multiply by transmission coeff itself
+                    energy *= params.material.transmission; 
+                    
+                    // Direction does NOT change (refraction ignored for acoustic approximations)
+                } 
+                else {
+                    // reflection (specular + scattering)
+                    float3 hit_point = px + dx * min_dist;
+                    dist_traveled += min_dist;
 
-                // nudge
-                px = hit_point + dx * 0.001f;
+                    // Specular Reflection Vector
+                    float d_dot_n = dot(dx, nx);
+                    float3 spec_dir = dx - 2.0f * d_dot_n * nx;
+                    
+                    // Diffuse Reflection Vector (Lambertian)
+                    // We need two random numbers for the hemisphere sampling
+                    float r1 = rand_float();
+                    float r2 = rand_float();
+                    float3 diff_dir = random_cosine_hemisphere(r1, r2, nx);
 
-                // absorb 15%
-                energy *= 0.85f;
+                    // Mix based on Scattering Coefficient
+                    float s = params.material.scattering;
+                    float3 mixed_dir = spec_dir * (1.0f - s) + diff_dir * s;
+                    dx = normalize(mixed_dir);
+
+                    // Nudge off wall to prevent self-intersection
+                    px = hit_point + nx * 0.001f;
+
+                    // Absorption
+                    energy *= (1.0f - params.material.absorption);
+                }
+
                 if (energy < 0.001f) break;
             }
         }
-    }); // FIX 3: Added closing );
+    });
 
     std::cout << "Simulation Complete. Total Listener Hits: " << total_hits << std::endl;
     if (total_hits == 0) {
         std::cout << "WARNING: No rays hit the listener! Try increasing --rays or the listener size is too small." << std::endl;
     }
 
-    // FIX 4: TBB Merge Logic
     // We iterate through the enumerable_thread_specific storage and sum them up
     for(const auto& local_buffer : tls_irs) {
         for(int i=0; i<ir_len; ++i) {

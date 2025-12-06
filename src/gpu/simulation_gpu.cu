@@ -7,6 +7,37 @@
 #define LISTENER_RADIUS 0.5f
 #define MAX_BOUNCES 50
 
+// rand num gen (wang hash)
+// statistically decent for ray tracing visuals/acoustics
+__device__ float rand_gpu(unsigned int& seed) {
+    seed = (seed ^ 61) ^ (seed >> 16);
+    seed *= 9;
+    seed = seed ^ (seed >> 4);
+    seed *= 0x27d4eb2d;
+    seed = seed ^ (seed >> 15);
+    return (float)(seed) / 4294967296.0f;
+}
+
+// random hemisphere vector
+__device__ float3 random_hemisphere_gpu(unsigned int& seed, float3 normal) {
+    float u1 = rand_gpu(seed);
+    float u2 = rand_gpu(seed);
+    
+    float r = sqrtf(u1);
+    float theta = 6.2831853f * u2;
+    float x = r * cosf(theta);
+    float y = r * sinf(theta);
+    float z = sqrtf(1.0f - u1);
+
+    float3 w = normal;
+    // Handle the case where w is parallel to (1,0,0)
+    float3 a = (fabs(w.x) > 0.9f) ? make_float3(0, 1, 0) : make_float3(1, 0, 0);
+    float3 u = normalize(cross(a, w));
+    float3 v = cross(w, u);
+    
+    return u * x + v * y + w * z;
+}
+
 __device__ void intersect_sphere(
     const float3& ray_origin, const float3& ray_dir, 
     float radius, 
@@ -82,10 +113,12 @@ __global__ void ray_trace_kernel(
     float* d_impulse_response,
     int room_type,
     int ir_length,
+    MaterialParams mat,
     // mesh data
     float3* d_v0, float3* d_v1, float3* d_v2, float3* d_normals, int num_triangles
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int seed = idx * 1973 + 9277;
     
     // bound check (assuming d_pos size matches num_rays)
     // can't easily check array size in CUDA, rely on launch bounds
@@ -145,25 +178,9 @@ __global__ void ray_trace_kernel(
                 float3 v1 = d_v1[i];
                 float3 v2 = d_v2[i];
 
-                float3 e1 = v1 - v0;
-                float3 e2 = v2 - v0;
-                
-                // Cross Product
-                float3 calc_norm;
-                calc_norm.x = e1.y * e2.z - e1.z * e2.y;
-                calc_norm.y = e1.z * e2.x - e1.x * e2.z;
-                calc_norm.z = e1.x * e2.y - e1.y * e2.x;
-                
-                // Normalize (Manual Math to fix "/" error)
-                float len_sq = dot(calc_norm, calc_norm);
-                if (len_sq > 1e-12f) {
-                    float invLen = rsqrtf(len_sq); // Fast inverse square root
-                    calc_norm.x *= invLen;
-                    calc_norm.y *= invLen;
-                    calc_norm.z *= invLen;
-                }
+                float3 tri_norm = d_normals[i];
 
-                intersect_triangle(px, dx, v0, v1, v2, calc_norm, min_dist, nx);
+                intersect_triangle(px, dx, v0, v1, v2, tri_norm, min_dist, nx);
             }
         }
         
@@ -189,17 +206,39 @@ __global__ void ray_trace_kernel(
             }
         }
 
-        // move ray
-        float move_dist = min_dist + 1e-3f; // nudge
-        px = px + dx * move_dist;
-        dist_traveled += min_dist;
+        float rng_val = rand_gpu(seed);
 
-        // reflect
-        float dot_prod = dot(dx, nx);
-        dx = dx - 2.0f * dot_prod * nx;
+        // Transmission Check
+        if (rng_val < mat.transmission) {
+            // PASS THROUGH
+            px = px + dx * (min_dist + mat.thickness);
+            dist_traveled += min_dist + mat.thickness;
+            energy *= mat.transmission; 
+            // Direction 'dx' stays same
+        } 
+        else {
+            // REFLECTION
+            float3 hit_point = px + dx * min_dist;
+            dist_traveled += min_dist;
 
-        // absorb
-        energy *= 0.85f;
+            // Specular
+            float d_dot_n = dot(dx, nx);
+            float3 spec = dx - 2.0f * d_dot_n * nx;
+
+            // Diffuse
+            float3 diffuse = random_hemisphere_gpu(seed, nx);
+
+            // Mix
+            float3 mixed = spec * (1.0f - mat.scattering) + diffuse * mat.scattering;
+            dx = normalize(mixed);
+            
+            // Nudge
+            px = hit_point + nx * 0.001f;
+            
+            // Absorption
+            energy *= (1.0f - mat.absorption);
+        }
+
         if (energy < 0.001f) break;
     }
 }
@@ -264,6 +303,7 @@ void run_simulation_gpu(const SimulationParams& params, const MeshData& mesh, st
         d_ir, 
         (int)params.room_type, 
         ir_len,
+        params.material,
         d_v0, d_v1, d_v2, d_normals, mesh.num_triangles
     );
     

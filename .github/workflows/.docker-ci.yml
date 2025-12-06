@@ -2,26 +2,62 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
 
 jobs:
-  docker-build-test:
+  physics-integration-test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Build Docker Image
-        # This builds the 'deploy' stage, which runs 'cmake' and 'make'.
-        # If this fails, your PR fails.
+        # Builds the container with all C++, Python, and FFTW dependencies
         run: docker build --target deploy -t acoustic-sim:test .
 
-      - name: Run Smoke Test inside Docker
-        # We override the default CMD to run a quick low-ray simulation.
-        # This proves the binary works and library linking (TBB/FFTW) is correct.
+      - name: Create Test Output Directory
+        run: mkdir -p test_results
+
+      - name: Run Physics & Audio Integration Test
+        # We mount (-v) the local 'test_results' folder into the container
+        # so we can extract the wav/png files after the test finishes.
         run: |
-          docker run --rm acoustic-sim:test \
-          ./build/acoustic_sim --room shoebox --dims 10,10,10 --rays 1000 --out test.wav
+          docker run --rm \
+            -v ${{ github.workspace }}/test_results:/app/test_results \
+            acoustic-sim:test \
+            /bin/bash -c "
+              echo '1. Generating Source Audio...' &&
+              python3 python/generate_beat.py &&
+              
+              echo '2. Running Physics Simulation (High Scattering/Transmission)...' &&
+              ./build/acoustic_sim \
+                --room shoebox \
+                --dims 12,12,6 \
+                --rays 5000 \
+                --absorption 0.1 \
+                --scattering 0.8 \
+                --trans 0.2 \
+                --input techno_dry.wav \
+                --mix 0.5 \
+                --out test_results/wet_test.wav &&
+              
+              echo '3. Validating Output (Check for Silence)...' &&
+              python3 -c \"import soundfile as sf; import numpy as np; d, _ = sf.read('test_results/wet_test.wav'); assert np.max(np.abs(d)) > 0.01, 'Error: Output is silent!'\" &&
+
+              echo '4. Generating Visualization...' &&
+              python3 python/visualize.py techno_dry.wav test_results/wet_test.wav &&
+              mv acoustic_analysis.png test_results/
+            "
+
+      - name: Upload Test Artifacts
+        # This saves the wav and png files to the GitHub Action summary
+        # allowing you to listen to the result and see the graph even if the build passes.
+        uses: actions/upload-artifact@v4
+        if: always() # Upload even if the test fails (for debugging)
+        with:
+          name: physics-test-results
+          path: test_results/
+          retention-days: 5
