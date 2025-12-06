@@ -30,7 +30,7 @@ jobs:
             acoustic-sim:test \
             /bin/bash -c "
               echo '1. Generating Source Audio...' &&
-              python3 generate_beat.py &&
+              python3 python/generate_beat.py &&
               
               echo '2. Running Physics Simulation (High Scattering/Transmission)...' &&
               ./build/acoustic_sim \
@@ -48,7 +48,7 @@ jobs:
               python3 -c \"import soundfile as sf; import numpy as np; d, _ = sf.read('test_results/wet_test.wav'); assert np.max(np.abs(d)) > 0.01, 'Error: Output is silent!'\" &&
 
               echo '4. Generating Visualization...' &&
-              python3 visualize.py techno_dry.wav test_results/wet_test.wav &&
+              python3 python/visualize.py techno_dry.wav test_results/wet_test.wav &&
               mv acoustic_analysis.png test_results/
             "
 
