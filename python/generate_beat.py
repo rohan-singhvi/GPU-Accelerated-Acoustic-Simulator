@@ -3,54 +3,55 @@ AI Generated Script for Testing Audio Processing
 """
 import numpy as np
 import soundfile as sf
+import argparse
 
-def generate_techno(duration=4.0, bpm=128, sample_rate=44100):
-    print(f"Generating {duration}s of Techno at {bpm} BPM...")
+def generate_techno_dry(duration=4.0, bpm=120, sample_rate=44100):
+    print(f"Generating {duration}s of Sparse Techno at {bpm} BPM...")
     
     t = np.linspace(0, duration, int(sample_rate * duration))
     audio = np.zeros_like(t)
     
-    # Beat positions (Every 1/4 note)
     seconds_per_beat = 60.0 / bpm
     
-    for i in range(int(duration / seconds_per_beat)):
+    #Sine sweep - Occurs on Beat 1
+    # We leave Beat 2 empty to hear the room
+    for i in range(0, int(duration / seconds_per_beat), 2): 
         start_time = i * seconds_per_beat
-        # Only play kick on 1, 2, 3, 4
         start_idx = int(start_time * sample_rate)
         
-        # Kick Length (0.15s)
         k_len = int(0.15 * sample_rate)
         if start_idx + k_len >= len(audio): continue
             
-        # Frequency sweep (150Hz down to 50Hz)
         kt = np.linspace(0, 0.15, k_len)
-        freq = np.linspace(150, 50, k_len)
+        freq = np.linspace(150, 40, k_len) # Sweep down
         kick = np.sin(2 * np.pi * freq * kt)
-        
-        # Envelope (Punchy decay)
-        env = np.exp(-20 * kt)
-        
-        audio[start_idx:start_idx+k_len] += kick * env
+        env = np.exp(-15 * kt)
+        audio[start_idx:start_idx+k_len] += kick * env * 0.8
 
-    for i in range(int(duration / (seconds_per_beat / 2))):
-        if i % 2 == 0: continue # Skip downbeats
-        
-        start_time = i * (seconds_per_beat / 2)
+    # clap - Occurs on Beat 3 (Backbeat)
+    # We leave Beat 4 empty
+    for i in range(0, int(duration / seconds_per_beat), 2):
+        # Offset by 1 beat (the "and" or the "3")
+        start_time = (i + 1) * seconds_per_beat 
         start_idx = int(start_time * sample_rate)
         
-        h_len = int(0.05 * sample_rate) # Short burst
-        if start_idx + h_len >= len(audio): continue
+        c_len = int(0.08 * sample_rate)
+        if start_idx + c_len >= len(audio): continue
             
-        noise = np.random.uniform(-0.5, 0.5, h_len)
-        env = np.exp(-40 * np.linspace(0, 0.05, h_len))
-        
-        audio[start_idx:start_idx+h_len] += noise * env * 0.4
+        noise = np.random.uniform(-0.5, 0.5, c_len)
+        # Jagged envelope for clap texture
+        env = np.exp(-30 * np.linspace(0, 0.08, c_len))
+        audio[start_idx:start_idx+c_len] += noise * env * 0.5
 
-    # normalize
-    audio = audio / np.max(np.abs(audio))
+    # Normalize to -1.0 to 1.0
+    max_val = np.max(np.abs(audio))
+    if max_val > 0:
+        audio = audio / max_val
+        
     return audio, sample_rate
 
-
-data, sr = generate_techno()
-sf.write('techno_dry.wav', data, sr)
-print("Created 'techno_dry.wav'")
+if __name__ == "__main__":
+    data, sr = generate_techno_dry()
+    filename = "techno_dry.wav"
+    sf.write(filename, data, sr)
+    print(f"Success! Saved '{filename}' (Use this as --input)")

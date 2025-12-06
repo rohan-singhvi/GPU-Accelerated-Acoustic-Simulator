@@ -11,12 +11,16 @@ void print_usage() {
     std::cout << "Usage: ./acoustic_sim [options]\n";
     std::cout << "Options:\n";
     std::cout << "  --room <type>      shoebox (default), dome, mesh\n";
-    std::cout << "  --dims <x,y,z>     Room dimensions (e.g. 10,5,3) or Radius\n";
-    std::cout << "  --mesh <file>      Path to .obj file (required for mesh room)\n";
+    std::cout << "  --dims <x,y,z>     Room dimensions or Radius\n";
+    std::cout << "  --mesh <file>      Path to .obj file\n";
     std::cout << "  --rays <n>         Number of rays (default 100000)\n";
-    std::cout << "  --input <file>     (Optional) Input audio file to apply reverb to\n";
-    std::cout << "  --mix <0.0-1.0>    (Optional) Reverb mix amount (default 0.4)\n";
-    std::cout << "  --out <file>       Output file (default out.wav)\n";
+    std::cout << "  --input <file>     Input audio file\n";
+    std::cout << "  --mix <0.0-1.0>    Reverb mix (default 0.4)\n";
+    std::cout << "  --out <file>       Output file\n";
+    std::cout << "  --absorption <0-1> Wall absorption (0=Reflective, 1=Dead)\n";
+    std::cout << "  --scattering <0-1> Wall roughness (0=Mirror, 1=Diffuse)\n";
+    std::cout << "  --trans <0-1>      Transmission (0=Opaque, 1=Transparent)\n";
+    std::cout << "  --thick <meters>   Wall thickness (default 0.1)\n";
 }
 
 float3 parse_dims(const char* arg) {
@@ -24,7 +28,6 @@ float3 parse_dims(const char* arg) {
     sscanf(arg, "%f,%f,%f", &x, &y, &z);
     return make_float3(x, y, z);
 }
-
 
 void run_simulation(const SimulationParams& params, const MeshData& mesh, std::vector<float>& ir) {
 #ifdef ENABLE_CUDA
@@ -44,7 +47,6 @@ std::vector<float> apply_reverb(const std::vector<float>& dry, const std::vector
 #endif
 }
 
-
 int main(int argc, char** argv) {
     SimulationParams params;
     params.num_rays = 100000;
@@ -52,6 +54,11 @@ int main(int argc, char** argv) {
     params.room_dims = make_float3(10.0f, 5.0f, 3.0f);
     params.source_pos = make_float3(2.0f, 1.5f, 1.5f);
     params.listener_pos = make_float3(8.0f, 1.5f, 1.5f);
+    
+    params.material.absorption = 0.10f;  // Concrete (Reflective)
+    params.material.scattering = 0.10f;  // Smooth surface
+    params.material.transmission = 0.0f; // Solid walls
+    params.material.thickness = 0.2f;    // 20cm
     
     std::string outfile = "out.wav";
     std::string input_audio_file = "";
@@ -70,6 +77,12 @@ int main(int argc, char** argv) {
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outfile = argv[++i];
         else if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) input_audio_file = argv[++i];
         else if (strcmp(argv[i], "--mix") == 0 && i + 1 < argc) mix = atof(argv[++i]);
+        
+        else if (strcmp(argv[i], "--absorption") == 0 && i + 1 < argc) params.material.absorption = atof(argv[++i]);
+        else if (strcmp(argv[i], "--scattering") == 0 && i + 1 < argc) params.material.scattering = atof(argv[++i]);
+        else if (strcmp(argv[i], "--trans") == 0 && i + 1 < argc) params.material.transmission = atof(argv[++i]);
+        else if (strcmp(argv[i], "--thick") == 0 && i + 1 < argc) params.material.thickness = atof(argv[++i]);
+        else if (strcmp(argv[i], "--help") == 0) { print_usage(); return 0; }
     }
 
     MeshData mesh;
@@ -81,8 +94,12 @@ int main(int argc, char** argv) {
         mesh = load_obj(params.mesh_path);
     }
 
-    std::vector<float> impulse_response;
     std::cout << "Starting Simulation (" << params.num_rays << " rays)...\n";
+    std::cout << "Mat Props -> Abs: " << params.material.absorption 
+              << ", Scat: " << params.material.scattering 
+              << ", Trans: " << params.material.transmission << "\n";
+
+    std::vector<float> impulse_response;
     run_simulation(params, mesh, impulse_response);
 
     if (!input_audio_file.empty()) {
@@ -90,13 +107,12 @@ int main(int argc, char** argv) {
         WavData input = read_wav(input_audio_file);
         
         if (!input.success) {
-            std::cerr << "Failed to load input audio (Ensure it is 16-bit PCM WAV).\n";
+            std::cerr << "Failed to load input audio.\n";
             return 1;
         }
 
         std::cout << "Applying Reverb (Convolution)... Mix: " << mix << "\n";
         std::vector<float> wet_result = apply_reverb(input.samples, impulse_response, mix);
-        
         write_wav(outfile, wet_result, input.sample_rate);
     } 
     else {
