@@ -161,4 +161,3 @@ python3 -c "import trimesh; trimesh.creation.icosphere(radius=8).export('../test
 | `--trans` | Transmission probability (`0.0`=Opaque, `1.0`=Clear) | `0.0` |
 | `--thick` | Wall thickness (meters) for transmission calculation | `0.2` |
 
-```
