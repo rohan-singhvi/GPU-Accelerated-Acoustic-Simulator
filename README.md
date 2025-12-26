@@ -7,6 +7,8 @@ This engine simulates sound propagation in 3D spaces to generate realistic **Roo
 * **NVIDIA GPU:** Runs massively parallel ray tracing using CUDA.
 * **CPU (Mac/Linux):** Falls back to multi-threaded TBB + FFTW for compatibility.
 
+It simulates how sound bounces around a room (shoebox, dome, or a complex 3D model) to generate a "Room Impulse Response" (IR). This IR captures the acoustic "fingerprint" of the room, which is then applied to a dry audio signal (convolution) to make it sound like it was recorded in that space.
+
 ## Features
 
 * **Hybrid Core:** Seamlessly runs on MacBook Pro (CPU) or Cloud Servers (H100/A100 GPUs).
