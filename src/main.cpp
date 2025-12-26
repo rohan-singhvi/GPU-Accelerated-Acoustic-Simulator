@@ -92,6 +92,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         mesh = load_obj(params.mesh_path);
+        build_bvh(mesh);
     }
 
     std::cout << "Starting Simulation (" << params.num_rays << " rays)...\n";
